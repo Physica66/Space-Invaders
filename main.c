@@ -101,7 +101,7 @@ void DrawStealthFlames(Vector2 heroCenterPos, float planeWidth, float planeHeigh
 
 int main(void)
 {
-    InitWindow(WindowWidth, WindowHeight, "Space Invaders - Earth Defense Fleet");
+    InitWindow(WindowWidth, WindowHeight, "Space Invaders");
     InitAudioDevice();
     SetTargetFPS(60);
 
