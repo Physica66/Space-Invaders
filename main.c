@@ -2164,9 +2164,9 @@ int main(void)
                 if (IsKeyPressed(KEY_ESCAPE))
                 {
                     PlaySound(menuSelect);
-                    StopMusicStream(bgmLost);
-                    lostBgmStarted = false;
-                    lostDialogueIndex = 0;
+                    StopMusicStream(bgmWin);
+                    winBgmStarted = false;
+                    winDialogueIndex = 0;
                     CurrentState = STATE_MENU;
                     PlayMusicStream(bgmMenu);
                 }
@@ -2583,13 +2583,13 @@ int main(void)
                 }
             }
 
-            // SHOAB SPECIAL BULLET MOVEMENT & MULTI-TARGET COLLISION
+            // SHOAB SPECIAL BULLET MOVEMENT & COLLISION (WITH SHOAB'S BOSS DAMAGE & OVERFLOW MECHANICS)
             if (Hero1SpecialBulletActive)
             {
                 Hero1SpecialBulletPos.y -= BulletSpeedY * Time;
                 Rectangle SpecialBulletRec = { Hero1SpecialBulletPos.x - BulletWidth / 2.0f, Hero1SpecialBulletPos.y, BulletWidth, BulletHeight * 5 };
 
-                // Piercing hit through standard aliens
+                // 1. Regular Aliens Piercing Strike
                 if (!bossActive && !bossSpawned)
                 {
                     for (int i = 0; i < AlienInX; i++)
@@ -2612,14 +2612,14 @@ int main(void)
                     }
                 }
 
-                // Penetrating hit on Jammer Commander
+                // 2. Piercing Hit on Jammer Commander
                 if (jammerActive)
                 {
                     Rectangle jRec = { jammerPos.x, jammerPos.y, COMMANDER_SIZE, COMMANDER_SIZE };
                     if (CheckCollisionRecs(SpecialBulletRec, jRec))
                     {
                         PlaySound(damage);
-                        jammerHp--;
+                        jammerHp -= 2;
                         Hero1Score += 50;
                         if (jammerHp <= 0)
                         {
@@ -2630,14 +2630,14 @@ int main(void)
                     }
                 }
 
-                // Penetrating hit on Warp Commander
+                // 3. Piercing Hit on Warp Commander
                 if (warpActive)
                 {
                     Rectangle wRec = { warpPos.x, warpPos.y, COMMANDER_SIZE, COMMANDER_SIZE };
                     if (CheckCollisionRecs(SpecialBulletRec, wRec))
                     {
                         PlaySound(damage);
-                        warpHp--;
+                        warpHp -= 2;
                         Hero1Score += 50;
                         if (warpHp <= 0)
                         {
@@ -2648,9 +2648,10 @@ int main(void)
                     }
                 }
 
-                // Penetrating hit on Minions and Boss
+                // 4. Shoab's Instant Minion Destruction & Boss Shield Overflow Mechanics
                 if (bossActive)
                 {
+                    // Instant kill on minions
                     for (int m = 0; m < MAX_MINIONS; m++)
                     {
                         if (minionActive[m])
@@ -2658,14 +2659,10 @@ int main(void)
                             Rectangle mRec = { minionPos[m].x, minionPos[m].y, MinionSize, MinionSize };
                             if (CheckCollisionRecs(SpecialBulletRec, mRec))
                             {
+                                minionActive[m] = false;
+                                Hero1Kills += 1;
+                                Hero1Score += 200;
                                 PlaySound(damage);
-                                minionHp[m]--;
-                                if (minionHp[m] <= 0)
-                                {
-                                    minionActive[m] = false;
-                                    Hero1Score += 150;
-                                    Hero1Kills++;
-                                }
                             }
                         }
                     }
@@ -2674,35 +2671,93 @@ int main(void)
                     Rectangle rightPodRec = { bossPos.x + BossWidth - 83, bossPos.y + 70, 75, 110 };
                     Rectangle coreRec     = { bossPos.x + 85, bossPos.y + 35, 130, 130 };
 
+                    // Strike Left Shield Pod (50 Damage + Overflow to Right Pod & Boss Core)
                     if (bossLeftPodHp > 0 && CheckCollisionRecs(SpecialBulletRec, leftPodRec))
                     {
+                        Hero1SpecialBulletActive = false;
                         PlaySound(damage);
-                        bossLeftPodHp -= 2;
-                        Hero1Score += 25;
-                        Hero1BossDamage += 2;
-                        if (bossLeftPodHp <= 0) { bossLeftPodHp = 0; Hero1Score += 250; }
+                        bossLeftPodHp -= 50;
+                        Hero1Score += 250;
+                        Hero1BossDamage += 50;
+                        if (bossLeftPodHp <= 0)
+                        {
+                            bossRightPodHp += bossLeftPodHp;
+                            if (bossRightPodHp < 0) {
+                                bossHp += bossRightPodHp;
+                                bossRightPodHp = 0;
+                            }
+                            bossLeftPodHp = 0;
+                            Hero1Score += 250;
+                            if (bossHp <= 0) {
+                                bossHp = 0;
+                                bossActive = false;
+                                bossDefeated = true;
+                            }
+                        }
                     }
+                    // Strike Right Shield Pod (50 Damage + Overflow to Left Pod & Boss Core)
                     else if (bossRightPodHp > 0 && CheckCollisionRecs(SpecialBulletRec, rightPodRec))
                     {
+                        Hero1SpecialBulletActive = false;
                         PlaySound(damage);
-                        bossRightPodHp -= 2;
-                        Hero1Score += 25;
-                        Hero1BossDamage += 2;
-                        if (bossRightPodHp <= 0) { bossRightPodHp = 0; Hero1Score += 250; }
+                        bossRightPodHp -= 50;
+                        Hero1Score += 250;
+                        Hero1BossDamage += 50;
+                        if (bossRightPodHp <= 0)
+                        {
+                            bossLeftPodHp += bossRightPodHp;
+                            if (bossLeftPodHp < 0) {
+                                bossHp += bossLeftPodHp;
+                                bossLeftPodHp = 0;
+                            }
+                            bossRightPodHp = 0;
+                            Hero1Score += 250;
+                            if (bossHp <= 0) {
+                                bossHp = 0;
+                                bossActive = false;
+                                bossDefeated = true;
+                            }
+                        }
                     }
+                    // Strike Boss Center Core
                     else if (CheckCollisionRecs(SpecialBulletRec, coreRec))
                     {
+                        Hero1SpecialBulletActive = false;
                         if (bossLeftPodHp > 0 || bossRightPodHp > 0)
                         {
                             PlaySound(damage);
+                            bossLeftPodHp -= 50;
+                            Hero1Score += 250;
+                            Hero1BossDamage += 50;
+                            if (bossLeftPodHp <= 0)
+                            {
+                                bossRightPodHp += bossLeftPodHp;
+                                if (bossRightPodHp < 0) {
+                                    bossHp += bossRightPodHp;
+                                    bossRightPodHp = 0;
+                                }
+                                bossLeftPodHp = 0;
+                                Hero1Score += 250;
+                                if (bossHp <= 0) {
+                                    bossHp = 0;
+                                    bossActive = false;
+                                    bossDefeated = true;
+                                }
+                            }
                         }
                         else
                         {
+                            // Shields down: 30 direct damage to boss core
                             PlaySound(damage);
-                            bossHp -= 2;
-                            Hero1Score += 50;
-                            Hero1BossDamage += 2;
-                            if (bossHp <= 0) { bossHp = 0; bossActive = false; bossDefeated = true; }
+                            bossHp -= 30;
+                            Hero1Score += 500;
+                            Hero1BossDamage += 30;
+                            if (bossHp <= 0)
+                            {
+                                bossHp = 0;
+                                bossActive = false;
+                                bossDefeated = true;
+                            }
                         }
                     }
                 }
@@ -3498,7 +3553,7 @@ int main(void)
                 }
             }
 
-            // DRAW HERO 1: SHOAB[cite: 2]
+            // DRAW HERO 1: SHOAB
             if (Hero1Lives > 0)
             {
                 Rectangle h1Dest = { Hero1Pos.x - HeroWidth / 2.0f, Hero1Pos.y, HeroWidth, HeroHeight };
@@ -3518,7 +3573,7 @@ int main(void)
                 }
             }
 
-            // DRAW HERO 2: NAYEMUL[cite: 1]
+            // DRAW HERO 2: NAYEMUL
             if (Hero2Lives > 0)
             {
                 Vector2 h2Center = { Hero2Pos.x, Hero2Pos.y + HeroHeight / 2.0f };
