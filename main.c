@@ -154,6 +154,7 @@ int main(void)
     AlienPos[0][0] = (Vector2){ 150, 50 };
     Vector2 AlienSpeed = { AlienSpeedX, AlienSpeedY };
     int AlienLooks[AlienInX][AlienInY];
+    int SpeedBuff[AlienInY];
     for (int X = 0; X < AlienInX; X++)
     {
         for (int Y = 0; Y < AlienInY; Y++)
@@ -162,6 +163,7 @@ int main(void)
             AlienPos[X][Y].y = AlienPos[0][0].y + (AlienSize + AlienDistance) * Y;
             AlienAlive[X][Y] = true;
             AlienLooks[X][Y] = GetRandomValue(1, AlienSprite);
+            SpeedBuff[Y] = GetRandomValue(0, 20);
         }
     }
 
@@ -290,6 +292,18 @@ int main(void)
     Sound sndWarpShot    = LoadSound("assets/audio/sfx_warp_shot.wav");
     Sound sndTeleport    = LoadSound("assets/audio/sfx_teleport.wav");
     Sound sndWarpDeath   = LoadSound("assets/audio/sfx_warp_death.wav");
+
+    // Newly Integrated Gameplay & Immersion Sound Effects
+    Sound sndSpecialBeam  = LoadSound("assets/audio/sfx_special_beam.wav");
+    Sound sndChargeReady  = LoadSound("assets/audio/sfx_charge_ready.wav");
+    Sound sndPodDestroy   = LoadSound("assets/audio/sfx_pod_destroy.wav");
+    Sound sndOrbLaunch    = LoadSound("assets/audio/sfx_orb_launch.wav");
+    Sound sndWarningSiren = LoadSound("assets/audio/sfx_warning_siren.wav");
+    Sound sndDefibHum     = LoadSound("assets/audio/sfx_defib_hum.wav");
+    Sound sndBossEnrage   = LoadSound("assets/audio/sfx_boss_enrage.wav");
+    Sound sndRocketBoost  = LoadSound("assets/audio/sfx_rocket_boost.wav");
+
+    bool bossEnraged = false; // State flag to ensure boss enrage roar triggers once
 
     // Screen Shake Camera
     Camera2D screenCamera = { 0 };
@@ -481,6 +495,15 @@ int main(void)
         SetSoundVolume(sndWarpShot, SfxVolume);
         SetSoundVolume(sndTeleport, SfxVolume);
         SetSoundVolume(sndWarpDeath, SfxVolume);
+
+        SetSoundVolume(sndSpecialBeam, SfxVolume);
+        SetSoundVolume(sndChargeReady, SfxVolume);
+        SetSoundVolume(sndPodDestroy, SfxVolume);
+        SetSoundVolume(sndOrbLaunch, SfxVolume);
+        SetSoundVolume(sndWarningSiren, SfxVolume);
+        SetSoundVolume(sndDefibHum, SfxVolume);
+        SetSoundVolume(sndBossEnrage, SfxVolume);
+        SetSoundVolume(sndRocketBoost, SfxVolume);
 
         SetMusicVolume(bgmStory, BgmVolume);
         SetMusicVolume(bgmMenu, BgmVolume);
@@ -721,7 +744,7 @@ int main(void)
             int portY = panelY + 115;
             int p1FrameX = panelX + 45;
 
-            // Right Portrait Frame: Nayemul Islam
+            // Right Portrait Frame: Nayemul Islam[cite: 1]
             int p2FrameX = panelX + panelW - portW - 45;
 
             bool shoabSpeaking = (storyDialogueIndex == 1 || storyDialogueIndex == 3);
@@ -744,7 +767,7 @@ int main(void)
             DrawRectangleLinesEx((Rectangle){ p1FrameX, portY, (float)portW, (float)portH }, shoabSpeaking ? 3.5f : 1.5f, p1Border);
             DrawText("SHOAB", p1FrameX + (portW - MeasureText("SHOAB", 18)) / 2, portY + portH + 10, 18, shoabSpeaking ? LIME : GRAY);
 
-            // Draw Nayemul Transmission Frame with Safety Fallback
+            // Draw Nayemul Transmission Frame with Safety Fallback[cite: 1]
             Color p2Border = nayemulSpeaking ? YELLOW : DARKGRAY;
             Color p2Tint = nayemulSpeaking ? WHITE : Fade(GRAY, 0.40f);
             DrawRectangle(p2FrameX - 4, portY - 4, portW + 8, portH + 8, Fade(BLACK, 0.85f));
@@ -1004,6 +1027,7 @@ int main(void)
                     if (launchDialogueIndex > 3)
                     {
                         launchCountdownActive = true;
+                        PlaySound(sndRocketBoost);
                     }
                 }
             }
@@ -1203,7 +1227,7 @@ int main(void)
             DrawText("- Sprite Collection", card1X + 35, cardY + 185, 17, LIGHTGRAY);
             DrawText("- Alien Movements", card1X + 35, cardY + 215, 17, LIGHTGRAY);
 
-            // Right Card: Nayemul Islam
+            // Right Card: Nayemul Islam[cite: 1]
             int card2X = panelX + 660;
             DrawRectangle(card2X, cardY, cardW, cardH, Fade(BLACK, 0.75f));
             DrawRectangleLines(card2X, cardY, cardW, cardH, SKYBLUE);
@@ -1670,6 +1694,9 @@ int main(void)
                     screenCamera.offset = (Vector2){ 0, 0 };
                     StopMusicStream(bgmBoss);
                     StopSound(bossLaserSound);
+                    StopSound(sndDefibHum);
+                    StopSound(sndWarningSiren);
+                    PlaySound(gameOverCommunity);
                 }
             }
 
@@ -1678,6 +1705,8 @@ int main(void)
                 PlaySound(menuSelect);
                 StopMusicStream(bgmBoss);
                 StopSound(bossLaserSound);
+                StopSound(sndDefibHum);
+                StopSound(sndWarningSiren);
                 CurrentState = STATE_MENU;
                 PlayMusicStream(bgmMenu);
             }
@@ -1689,9 +1718,11 @@ int main(void)
                 float distToCrash = Vector2Distance(Hero2Pos, Hero1CrashPos);
                 if (distToCrash < 85.0f)
                 {
+                    if (!IsSoundPlaying(sndDefibHum)) PlaySound(sndDefibHum);
                     hero1ReviveTimer += Time;
                     if (hero1ReviveTimer >= 1.5f)
                     {
+                        StopSound(sndDefibHum);
                         Hero2Lives--;
                         Hero1Lives = 1;
                         hero1ReviveTimer = 0.0f;
@@ -1701,11 +1732,13 @@ int main(void)
                 }
                 else
                 {
+                    if (hero1ReviveTimer > 0.0f) StopSound(sndDefibHum);
                     hero1ReviveTimer = 0.0f;
                 }
             }
             else
             {
+                if (hero1ReviveTimer > 0.0f) StopSound(sndDefibHum);
                 hero1ReviveTimer = 0.0f;
             }
 
@@ -1714,9 +1747,11 @@ int main(void)
                 float distToCrash = Vector2Distance(Hero1Pos, Hero2CrashPos);
                 if (distToCrash < 85.0f)
                 {
+                    if (!IsSoundPlaying(sndDefibHum)) PlaySound(sndDefibHum);
                     hero2ReviveTimer += Time;
                     if (hero2ReviveTimer >= 2.0f)
                     {
+                        StopSound(sndDefibHum);
                         Hero1Lives--;
                         Hero2Lives = 1;
                         hero2ReviveTimer = 0.0f;
@@ -1726,11 +1761,13 @@ int main(void)
                 }
                 else
                 {
+                    if (hero2ReviveTimer > 0.0f) StopSound(sndDefibHum);
                     hero2ReviveTimer = 0.0f;
                 }
             }
             else
             {
+                if (hero2ReviveTimer > 0.0f) StopSound(sndDefibHum);
                 hero2ReviveTimer = 0.0f;
             }
 
@@ -1741,6 +1778,8 @@ int main(void)
                 screenCamera.offset = (Vector2){ 0, 0 };
                 StopMusicStream(bgmBoss);
                 StopSound(bossLaserSound);
+                StopSound(sndDefibHum);
+                StopSound(sndWarningSiren);
 
                 if (!lostBgmStarted)
                 {
@@ -1880,6 +1919,7 @@ int main(void)
                     radarJammedTimer     = 0.0f;
                     jammerPowerTimer     = 0.0f;
                     warpPowerTimer       = 0.0f;
+                    bossEnraged          = false;
 
                     for (int b = 0; b < MAX_COMMANDER_BULLETS; b++)
                     {
@@ -1913,6 +1953,7 @@ int main(void)
                             AlienPos[X][Y].x = AlienPos[0][0].x + (AlienSize + AlienDistance) * X;
                             AlienPos[X][Y].y = AlienPos[0][0].y + (AlienSize + AlienDistance) * Y;
                             AlienAlive[X][Y] = true;
+                            SpeedBuff[Y] = GetRandomValue(0, 20);
                         }
                     }
                 }
@@ -1939,6 +1980,14 @@ int main(void)
                 screenCamera.offset = (Vector2){ 0, 0 };
                 StopMusicStream(bgmBoss);
                 StopSound(bossLaserSound);
+                StopSound(sndDefibHum);
+                StopSound(sndWarningSiren);
+
+                if (!winSoundPlayed)
+                {
+                    PlaySound(gameWin);
+                    winSoundPlayed = true;
+                }
 
                 if (!winBgmStarted)
                 {
@@ -2124,6 +2173,7 @@ int main(void)
                     radarJammedTimer     = 0.0f;
                     jammerPowerTimer     = 0.0f;
                     warpPowerTimer       = 0.0f;
+                    bossEnraged          = false;
 
                     for (int b = 0; b < MAX_COMMANDER_BULLETS; b++)
                     {
@@ -2157,6 +2207,7 @@ int main(void)
                             AlienPos[X][Y].x = AlienPos[0][0].x + (AlienSize + AlienDistance) * X;
                             AlienPos[X][Y].y = AlienPos[0][0].y + (AlienSize + AlienDistance) * Y;
                             AlienAlive[X][Y] = true;
+                            SpeedBuff[Y] = GetRandomValue(0, 20);
                         }
                     }
                 }
@@ -2185,6 +2236,7 @@ int main(void)
                     bossWarningActive = true;
                     bossWarningTimer = 0.0f;
                     PlayMusicStream(bgmBoss);
+                    PlaySound(sndWarningSiren);
 
                     // Add 2 extra lives to both heroes (Revives fallen teammate if one survived)
                     if (Hero1Lives <= 0)
@@ -2239,6 +2291,7 @@ int main(void)
 
                 if (bossWarningTimer >= 3.0f)
                 {
+                    StopSound(sndWarningSiren);
                     bossWarningActive = false;
                     bossActive = true;
                     bossHp = 100;
@@ -2371,6 +2424,7 @@ int main(void)
                 Hero1SpecialBulletActive = true;
                 ShoabSpecialTime = 0;
                 SpecialReady = false;
+                PlaySound(sndSpecialBeam);
             }
 
             // Tactical Feature 2: Orbital EMP Drop Trigger & Update
@@ -2397,6 +2451,7 @@ int main(void)
                     empBuffTimer = 8.5f;
                     empShockwaveRadius = 10.0f;
                     empShockwaveCenter = empPos;
+                    PlaySound(sndEmpBlast);
 
                     AlienBulletActive = false;
                     for (int mb = 0; mb < MAX_MINION_BULLETS; mb++) minionBulletActive[mb] = false;
@@ -2541,6 +2596,7 @@ int main(void)
                                 {
                                     bossLeftPodHp = 0;
                                     *hScore += 250;
+                                    PlaySound(sndPodDestroy);
                                 }
                             }
                             else if (bossRightPodHp > 0 && CheckCollisionRecs(bRec, rightPodRec))
@@ -2554,6 +2610,7 @@ int main(void)
                                 {
                                     bossRightPodHp = 0;
                                     *hScore += 250;
+                                    PlaySound(sndPodDestroy);
                                 }
                             }
                             else if (CheckCollisionRecs(bRec, coreRec))
@@ -2569,6 +2626,12 @@ int main(void)
                                     bossHp -= 3;
                                     *hScore += 50;
                                     *hBossDmg += 3;
+
+                                    if (bossHp <= 40 && !bossEnraged)
+                                    {
+                                        bossEnraged = true;
+                                        PlaySound(sndBossEnrage);
+                                    }
 
                                     if (bossHp <= 0)
                                     {
@@ -2681,6 +2744,7 @@ int main(void)
                         Hero1BossDamage += 50;
                         if (bossLeftPodHp <= 0)
                         {
+                            PlaySound(sndPodDestroy);
                             bossRightPodHp += bossLeftPodHp;
                             if (bossRightPodHp < 0) {
                                 bossHp += bossRightPodHp;
@@ -2688,6 +2752,11 @@ int main(void)
                             }
                             bossLeftPodHp = 0;
                             Hero1Score += 250;
+                            if (bossHp <= 40 && !bossEnraged)
+                            {
+                                bossEnraged = true;
+                                PlaySound(sndBossEnrage);
+                            }
                             if (bossHp <= 0) {
                                 bossHp = 0;
                                 bossActive = false;
@@ -2705,6 +2774,7 @@ int main(void)
                         Hero1BossDamage += 50;
                         if (bossRightPodHp <= 0)
                         {
+                            PlaySound(sndPodDestroy);
                             bossLeftPodHp += bossRightPodHp;
                             if (bossLeftPodHp < 0) {
                                 bossHp += bossLeftPodHp;
@@ -2712,6 +2782,11 @@ int main(void)
                             }
                             bossRightPodHp = 0;
                             Hero1Score += 250;
+                            if (bossHp <= 40 && !bossEnraged)
+                            {
+                                bossEnraged = true;
+                                PlaySound(sndBossEnrage);
+                            }
                             if (bossHp <= 0) {
                                 bossHp = 0;
                                 bossActive = false;
@@ -2731,6 +2806,7 @@ int main(void)
                             Hero1BossDamage += 50;
                             if (bossLeftPodHp <= 0)
                             {
+                                PlaySound(sndPodDestroy);
                                 bossRightPodHp += bossLeftPodHp;
                                 if (bossRightPodHp < 0) {
                                     bossHp += bossRightPodHp;
@@ -2738,6 +2814,11 @@ int main(void)
                                 }
                                 bossLeftPodHp = 0;
                                 Hero1Score += 250;
+                                if (bossHp <= 40 && !bossEnraged)
+                                {
+                                    bossEnraged = true;
+                                    PlaySound(sndBossEnrage);
+                                }
                                 if (bossHp <= 0) {
                                     bossHp = 0;
                                     bossActive = false;
@@ -2752,6 +2833,11 @@ int main(void)
                             bossHp -= 30;
                             Hero1Score += 500;
                             Hero1BossDamage += 30;
+                            if (bossHp <= 40 && !bossEnraged)
+                            {
+                                bossEnraged = true;
+                                PlaySound(sndBossEnrage);
+                            }
                             if (bossHp <= 0)
                             {
                                 bossHp = 0;
@@ -3075,6 +3161,7 @@ int main(void)
                 if (bossOrbTimer >= 4.0f && !deathSequenceActive)
                 {
                     bossOrbTimer = 0.0f;
+                    PlaySound(sndOrbLaunch);
 
                     float spreadVx[6] = { -160.0f, -95.0f, -30.0f, 30.0f, 95.0f, 160.0f };
                     int spawned = 0;
@@ -3225,25 +3312,29 @@ int main(void)
                 }
             }
 
-            // ALIEN GRID MOVEMENT
+            // ALIEN GRID MOVEMENT (VARIED ROW & COLUMN SPEED)
             if (!bossSpawned)
             {
-                if (AlienPos[AlienInX - 1][0].x + AlienSize >= WindowWidth && AlienSpeed.x > 0)
+                for (int Y = 0; Y < AlienInY; Y++)
                 {
-                    AlienSpeed.x *= -1;
-                    DownAlien(AlienInX, AlienInY, AlienPos);
-                }
-                else if (AlienPos[0][0].x <= 0 && AlienSpeed.x < 0)
-                {
-                    AlienSpeed.x *= -1;
-                    DownAlien(AlienInX, AlienInY, AlienPos);
+                    if (AlienPos[AlienInX - 1][Y].x + AlienSize >= WindowWidth && AlienSpeed.x > 0)
+                    {
+                        AlienSpeed.x *= -1;
+                        DownAlien(AlienInX, AlienInY, AlienPos);
+                    }
+                    else if (AlienPos[0][Y].x <= 0 && AlienSpeed.x < 0)
+                    {
+                        AlienSpeed.x *= -1;
+                        DownAlien(AlienInX, AlienInY, AlienPos);
+                    }
                 }
 
                 for (int X = 0; X < AlienInX; X++)
                 {
                     for (int Y = 0; Y < AlienInY; Y++)
                     {
-                        AlienPos[X][Y] = Vector2Add(AlienPos[X][Y], Vector2Scale(AlienSpeed, Time));
+                        if (AlienSpeed.x > 0) AlienPos[X][Y] = Vector2Add(AlienPos[X][Y], Vector2Scale(Vector2Add(AlienSpeed, (Vector2){ (float)SpeedBuff[Y], 0 }), Time));
+                        else AlienPos[X][Y] = Vector2Add(AlienPos[X][Y], Vector2Scale(Vector2Add(AlienSpeed, (Vector2){ (float)SpeedBuff[Y] * (-1), 0 }), Time));
 
                         if (AlienAlive[X][Y])
                         {
@@ -3573,7 +3664,7 @@ int main(void)
                 }
             }
 
-            // DRAW HERO 2: NAYEMUL
+            // DRAW HERO 2: NAYEMUL[cite: 1]
             if (Hero2Lives > 0)
             {
                 Vector2 h2Center = { Hero2Pos.x, Hero2Pos.y + HeroHeight / 2.0f };
@@ -3660,6 +3751,7 @@ int main(void)
             // SHOAB SPECIAL ABILITY HUD STATUS
             if (ShoabSpecialTime >= FPS * 15.0f)
             {
+                if (!SpecialReady) PlaySound(sndChargeReady);
                 DrawText("[Q] SPECIAL READY", 30, 122, 14, LIME);
                 SpecialReady = true;
             }
@@ -3669,7 +3761,7 @@ int main(void)
                 SpecialReady = false;
             }
 
-            // TOP-RIGHT HUD: NAYEMUL'S REACTIVE PORTRAIT BADGE and STATS
+            // TOP-RIGHT HUD: NAYEMUL'S REACTIVE PORTRAIT BADGE and STATS[cite: 1]
             int b2X = WindowWidth - 30 - bSize, b2Y = 18;
             DrawRectangle(b2X - 2, b2Y - 2, bSize + 4, bSize + 4, Fade(BLACK, 0.7f));
 
@@ -3836,6 +3928,15 @@ int main(void)
     UnloadSound(sndWarpShot);
     UnloadSound(sndTeleport);
     UnloadSound(sndWarpDeath);
+
+    UnloadSound(sndSpecialBeam);
+    UnloadSound(sndChargeReady);
+    UnloadSound(sndPodDestroy);
+    UnloadSound(sndOrbLaunch);
+    UnloadSound(sndWarningSiren);
+    UnloadSound(sndDefibHum);
+    UnloadSound(sndBossEnrage);
+    UnloadSound(sndRocketBoost);
 
     UnloadMusicStream(bgmStory);
     UnloadMusicStream(bgmMenu);
