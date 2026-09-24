@@ -5,6 +5,11 @@
 #include <string.h>
 #include <math.h>
 
+bool SpecialReady = false;
+bool starttimer = false;
+float ShoabSpecialTime = 0.0f;
+
+#define FPS 60
 #define WindowWidth 1500
 #define WindowHeight 900
 
@@ -34,12 +39,17 @@
 #define MAX_BOSS_ORBS 12
 #define BossPodMaxHp 75 // High-durability shield life pool for each weapon pod(to make the game harder :)
 
-// Medium Alien Minion dimensions and capacities
+// Medium Alien Minion dimensions & capacities
 #define MAX_MINIONS 8
 #define MinionSize 68
 #define MAX_MINION_BULLETS 16
 
+#define COMMANDER_SIZE 72
+#define MAX_COMMANDER_BULLETS 8
 
+#ifndef PI
+#define PI 3.14159265358979323846f
+#endif
 
 // Game Stats
 #define STATE_LOADING 0
@@ -112,7 +122,7 @@ int main(void)
 {
     InitWindow(WindowWidth, WindowHeight, "Space Invaders");
     InitAudioDevice();
-    SetTargetFPS(60);
+    SetTargetFPS(FPS);
 
     // Center game window on active macOS display
     int curMon = GetCurrentMonitor();
@@ -220,6 +230,67 @@ int main(void)
     if (portraitNayemul.id == 0) portraitNayemul = LoadTexture("assets/sprites/Nayemul_hero.jpeg");
     if (portraitNayemul.id == 0) portraitNayemul = LoadTexture("assets/sprites/Nayemul_hero.jpg");
 
+    // Commander Intro & Slowdown Control
+    bool commandersTriggered  = false;
+    bool commanderIntroActive = false;
+    float commanderIntroTimer = 0.0f;
+    float gameTimeDilation    = 1.0f;
+
+    // Commander 1 (Null-Vector Jammer)
+    Vector2 jammerPos            = { 0, 0 };
+    Vector2 jammerSpeed          = { 0, 0 };
+    int jammerHp                 = 0;
+    int jammerMaxHp              = 35;
+    bool jammerActive            = false;
+    float jammerShootTimer       = 0.0f;
+    float jammerActionCooldown   = 0.0f;
+    float jammerPowerTimer       = 0.0f;
+    int jammerAnimState          = 0;
+
+    // Commander 2 (Chrono-Phase Warp)
+    Vector2 warpPos              = { 0, 0 };
+    Vector2 warpSpeed            = { 0, 0 };
+    int warpHp                   = 0;
+    int warpMaxHp                = 30;
+    bool warpActive              = false;
+    float warpShootTimer         = 0.0f;
+    float warpActionCooldown     = 0.0f;
+    float warpPowerTimer         = 0.0f;
+    int warpAnimState            = 0;
+
+    // Commander Special Power States
+    float radarJammedTimer       = 0.0f; // Jammer power: hides player HUD score/status
+
+    // Commander Bullets
+    Vector2 jammerBulletPos[MAX_COMMANDER_BULLETS];
+    bool jammerBulletActive[MAX_COMMANDER_BULLETS] = { false };
+    Vector2 warpBulletPos[MAX_COMMANDER_BULLETS];
+    bool warpBulletActive[MAX_COMMANDER_BULLETS] = { false };
+
+    // Load Commander Textures
+    Texture2D jammerTex[4];
+    jammerTex[0] = LoadTexture("assets/sprites/commander_jammer_idle.png");
+    jammerTex[1] = LoadTexture("assets/sprites/commander_jammer_move_y.png");
+    jammerTex[2] = LoadTexture("assets/sprites/commander_jammer_move_x.png");
+    jammerTex[3] = LoadTexture("assets/sprites/commander_jammer_power.png");
+
+    Texture2D warpTex[4];
+    warpTex[0] = LoadTexture("assets/sprites/commander_warp_idle.png");
+    warpTex[1] = LoadTexture("assets/sprites/commander_warp_move_y.png");
+    warpTex[2] = LoadTexture("assets/sprites/commander_warp_move_x.png");
+    warpTex[3] = LoadTexture("assets/sprites/commander_warp_power.png");
+
+    // Load Commander Audio
+    Sound sndJammerHum   = LoadSound("assets/audio/sfx_jammer_hum.wav");
+    Sound sndJammerShot  = LoadSound("assets/audio/sfx_jammer_shot.wav");
+    Sound sndEmpBlast    = LoadSound("assets/audio/sfx_emp_blast.wav");
+    Sound sndJammerDeath = LoadSound("assets/audio/sfx_jammer_death.wav");
+
+    Sound sndWarpGlide   = LoadSound("assets/audio/sfx_warp_glide.wav");
+    Sound sndWarpShot    = LoadSound("assets/audio/sfx_warp_shot.wav");
+    Sound sndTeleport    = LoadSound("assets/audio/sfx_teleport.wav");
+    Sound sndWarpDeath   = LoadSound("assets/audio/sfx_warp_death.wav");
+
     // Screen Shake Camera
     Camera2D screenCamera = { 0 };
     screenCamera.zoom = 1.0f;
@@ -230,7 +301,9 @@ int main(void)
     Vector2 Hero1Pos = { WindowWidth * 0.35f, WindowHeight - HeroHeight };
     Vector2 Hero1Speed = { 0, 0 };
     Vector2 Hero1BulletPos[2] = { {0, 0}, {0, 0} };
+    Vector2 Hero1SpecialBulletPos = { 0, 0 };
     bool Hero1BulletActive[2] = { false, false };
+    bool Hero1SpecialBulletActive = false;
     bool hero1Debuffed = false;
     float hero1DebuffTimer = 0.0f;
     Vector2 Hero1CrashPos = { 0, 0 };
@@ -360,7 +433,9 @@ int main(void)
     // Main Game Loop
     while (!WindowShouldClose())
     {
-        float Time = GetFrameTime();
+        float rawTime = GetFrameTime();
+        gameTimeDilation = commanderIntroActive ? 0.12f : 1.0f;
+        float Time = rawTime * gameTimeDilation;
 
         // Global Fullscreen Shortcut
         if (IsKeyPressed(KEY_F11))
@@ -397,6 +472,15 @@ int main(void)
         SetSoundVolume(gameOverCommunity, SfxVolume);
         SetSoundVolume(heroOuch, SfxVolume);
         SetSoundVolume(bossLaserSound, SfxVolume);
+
+        SetSoundVolume(sndJammerHum, SfxVolume);
+        SetSoundVolume(sndJammerShot, SfxVolume);
+        SetSoundVolume(sndEmpBlast, SfxVolume);
+        SetSoundVolume(sndJammerDeath, SfxVolume);
+        SetSoundVolume(sndWarpGlide, SfxVolume);
+        SetSoundVolume(sndWarpShot, SfxVolume);
+        SetSoundVolume(sndTeleport, SfxVolume);
+        SetSoundVolume(sndWarpDeath, SfxVolume);
 
         SetMusicVolume(bgmStory, BgmVolume);
         SetMusicVolume(bgmMenu, BgmVolume);
@@ -435,7 +519,7 @@ int main(void)
             float progress = LoadingTimer / 5.0f;
             if (progress > 1.0f) progress = 1.0f;
 
-            // 1. Draw full-screen background image without altering image geometry[cite: 3]
+            // 1. Draw full-screen background image without altering image geometry
             if (loadingBg.id > 0)
             {
                 Rectangle src = { 0, 0, (float)loadingBg.width, (float)loadingBg.height };
@@ -577,7 +661,7 @@ int main(void)
                 DrawText("REAR BLAST DOORS: DISENGAGED... DEEP SPACE VACUUM EXPOSED", 160, 305, 20, RAYWHITE);
                 DrawText("AFTERBURNER IGNITION: DUAL BLUE PLASMA CORES FIRING AT MAXIMUM THRUST!", 160, 340, 20, SKYBLUE);
 
-                // Preview portraits with fallback[cite: 1, 2]
+                // Preview portraits with fallback
                 DrawRectangleLines(WindowWidth - 360, 150, 96, 96, LIME);
                 if (portraitShoab.id > 0)
                     DrawTexturePro(portraitShoab, (Rectangle){ 0, 0, (float)portraitShoab.width, (float)portraitShoab.height }, (Rectangle){ WindowWidth - 360, 150, 96, 96 }, (Vector2){0,0}, 0.0f, WHITE);
@@ -829,7 +913,7 @@ int main(void)
             }
         }
 
-        // STATE: PRE-GAMEPLAY LAUNCH and DIALOGUE (EARTH ORBIT VIEW)
+        // STATE: PRE-GAMEPLAY LAUNCH & DIALOGUE (EARTH ORBIT VIEW)
         else if (CurrentState == STATE_LAUNCH)
         {
             UpdateMusicStream(bgmStory);
@@ -1105,7 +1189,7 @@ int main(void)
             int cardH = 260;
             int cardY = panelY + 170;
 
-            // Left Card: Md. Shoab Mahmud[cite: 2]
+            // Left Card: Md. Shoab Mahmud
             int card1X = panelX + 80;
             DrawRectangle(card1X, cardY, cardW, cardH, Fade(BLACK, 0.75f));
             DrawRectangleLines(card1X, cardY, cardW, cardH, SKYBLUE);
@@ -1119,7 +1203,7 @@ int main(void)
             DrawText("- Sprite Collection", card1X + 35, cardY + 185, 17, LIGHTGRAY);
             DrawText("- Alien Movements", card1X + 35, cardY + 215, 17, LIGHTGRAY);
 
-            // Right Card: Nayemul Islam[cite: 1]
+            // Right Card: Nayemul Islam
             int card2X = panelX + 660;
             DrawRectangle(card2X, cardY, cardW, cardH, Fade(BLACK, 0.75f));
             DrawRectangleLines(card2X, cardY, cardW, cardH, SKYBLUE);
@@ -1188,6 +1272,23 @@ int main(void)
                     }
                 }
 
+                if (jammerActive)
+                {
+                    Rectangle jRec = { jammerPos.x, jammerPos.y, COMMANDER_SIZE, COMMANDER_SIZE };
+                    DrawTexturePro(jammerTex[jammerAnimState], (Rectangle){ 0, 0, (float)jammerTex[jammerAnimState].width, (float)jammerTex[jammerAnimState].height }, jRec, (Vector2){ 0, 0 }, 0.0f, WHITE);
+                }
+                if (warpActive)
+                {
+                    Rectangle wRec = { warpPos.x, warpPos.y, COMMANDER_SIZE, COMMANDER_SIZE };
+                    DrawTexturePro(warpTex[warpAnimState], (Rectangle){ 0, 0, (float)warpTex[warpAnimState].width, (float)warpTex[warpAnimState].height }, wRec, (Vector2){ 0, 0 }, 0.0f, WHITE);
+                }
+
+                for (int b = 0; b < MAX_COMMANDER_BULLETS; b++)
+                {
+                    if (jammerBulletActive[b]) DrawRectangle((int)(jammerBulletPos[b].x - 4), (int)jammerBulletPos[b].y, 8, 22, (Color){ 200, 70, 255, 255 });
+                    if (warpBulletActive[b]) DrawRectangle((int)(warpBulletPos[b].x - 3), (int)warpBulletPos[b].y, 6, 26, SKYBLUE);
+                }
+
                 if (bossActive)
                 {
                     Rectangle bossRec = { bossPos.x, bossPos.y, BossWidth, BossHeight };
@@ -1214,6 +1315,7 @@ int main(void)
                     if (Hero1BulletActive[i]) DrawRectangle((int)(Hero1BulletPos[i].x - BulletWidth / 2.0f), (int)Hero1BulletPos[i].y, BulletWidth, BulletHeight, YELLOW);
                     if (Hero2BulletActive[i]) DrawRectangle((int)(Hero2BulletPos[i].x - BulletWidth / 2.0f), (int)Hero2BulletPos[i].y, BulletWidth, BulletHeight, SKYBLUE);
                 }
+                if (Hero1SpecialBulletActive) DrawRectangle((int)(Hero1SpecialBulletPos.x - BulletWidth / 2.0f), (int)Hero1SpecialBulletPos.y, BulletWidth, BulletHeight * 5, WHITE);
 
                 if (AlienBulletActive) DrawRectangle((int)(AlienBulletPos.x - AlienBulletWidth / 2.0f), (int)AlienBulletPos.y, AlienBulletWidth, AlienBulletHeight, RED);
 
@@ -1272,6 +1374,289 @@ int main(void)
             // Timers
             if (hero1HitFlashTimer > 0.0f) hero1HitFlashTimer -= Time;
             if (hero2HitFlashTimer > 0.0f) hero2HitFlashTimer -= Time;
+            if (radarJammedTimer > 0.0f)   radarJammedTimer -= Time;
+
+            // SPECIAL ABILITY TIMER For Shoab and Special Bullet
+            if (!isPaused && Hero1Lives > 0)
+            {
+                ShoabSpecialTime += 1;
+            }
+
+            // Trigger Commanders when 65% of the alien swarm is eliminated
+            int totalAliens = AlienInX * AlienInY;
+            if (!commandersTriggered && !bossSpawned && AliensKilled >= (int)(totalAliens * 0.65f))
+            {
+                commandersTriggered  = true;
+                commanderIntroActive = true;
+                commanderIntroTimer  = 3.0f;
+                PlaySound(sndEmpBlast);
+            }
+
+            // 3-Second Slowdown Countdown & Spawn Execution
+            if (commanderIntroActive)
+            {
+                commanderIntroTimer -= rawTime;
+                if (commanderIntroTimer <= 0.0f)
+                {
+                    commanderIntroActive = false;
+                    gameTimeDilation = 1.0f;
+
+                    // Initialize Null-Vector Jammer
+                    jammerPos            = (Vector2){ WindowWidth * 0.25f - COMMANDER_SIZE / 2.0f, 130.0f };
+                    jammerSpeed          = (Vector2){ 120.0f, 0.0f };
+                    jammerHp             = jammerMaxHp;
+                    jammerActive         = true;
+                    jammerShootTimer     = 1.5f;
+                    jammerActionCooldown = 5.0f;
+                    jammerPowerTimer     = 0.0f;
+                    jammerAnimState      = 0;
+
+                    // Initialize Chrono-Phase Warp Commander
+                    warpPos              = (Vector2){ WindowWidth * 0.75f - COMMANDER_SIZE / 2.0f, 130.0f };
+                    warpSpeed            = (Vector2){ 140.0f, 0.0f };
+                    warpHp               = warpMaxHp;
+                    warpActive           = true;
+                    warpShootTimer       = 2.0f;
+                    warpActionCooldown   = 4.0f;
+                    warpPowerTimer       = 0.0f;
+                    warpAnimState        = 0;
+
+                    PlaySound(sndTeleport);
+                }
+            }
+
+            // COMMANDER 1: NULL-VECTOR JAMMER UPDATE (Movement, Shooting & Radar Jamming Power)
+            if (jammerActive)
+            {
+                jammerPos.x += jammerSpeed.x * Time;
+                if (jammerPos.x <= 40)
+                {
+                    jammerPos.x = 40;
+                    jammerSpeed.x = fabsf(jammerSpeed.x);
+                }
+                else if (jammerPos.x >= WindowWidth - COMMANDER_SIZE - 40)
+                {
+                    jammerPos.x = WindowWidth - COMMANDER_SIZE - 40;
+                    jammerSpeed.x = -fabsf(jammerSpeed.x);
+                }
+
+                // Jammer Shooting
+                if (!deathSequenceActive)
+                {
+                    jammerShootTimer -= Time;
+                    if (jammerShootTimer <= 0.0f)
+                    {
+                        jammerShootTimer = 1.8f;
+                        for (int b = 0; b < MAX_COMMANDER_BULLETS; b++)
+                        {
+                            if (!jammerBulletActive[b])
+                            {
+                                jammerBulletActive[b] = true;
+                                jammerBulletPos[b] = (Vector2){ jammerPos.x + COMMANDER_SIZE / 2.0f, jammerPos.y + COMMANDER_SIZE };
+                                PlaySound(sndJammerShot);
+                                break;
+                            }
+                        }
+                    }
+
+                    // Jammer Special Power: Radar Jamming EMP Field
+                    jammerActionCooldown -= Time;
+                    if (jammerActionCooldown <= 0.0f)
+                    {
+                        jammerActionCooldown = 8.5f;
+                        jammerPowerTimer = 1.4f;
+                        radarJammedTimer = 5.0f; // Blinds HUD telemetry for 5 seconds
+                        PlaySound(sndEmpBlast);
+                        PlaySound(sndJammerHum);
+                    }
+                }
+
+                if (jammerPowerTimer > 0.0f)
+                {
+                    jammerPowerTimer -= Time;
+                    jammerAnimState = 3; // Power deployment sprite
+                }
+                else
+                {
+                    jammerAnimState = (fabsf(jammerSpeed.x) > 0.0f) ? 2 : 0;
+                }
+            }
+
+            // COMMANDER 2: CHRONO-PHASE WARP COMMANDER UPDATE (Movement, Shooting & Quantum Teleport Power)
+            if (warpActive)
+            {
+                warpPos.x += warpSpeed.x * Time;
+                if (warpPos.x <= 40)
+                {
+                    warpPos.x = 40;
+                    warpSpeed.x = fabsf(warpSpeed.x);
+                }
+                else if (warpPos.x >= WindowWidth - COMMANDER_SIZE - 40)
+                {
+                    warpPos.x = WindowWidth - COMMANDER_SIZE - 40;
+                    warpSpeed.x = -fabsf(warpSpeed.x);
+                }
+
+                // Warp Commander Shooting (Twin needle shots)
+                if (!deathSequenceActive)
+                {
+                    warpShootTimer -= Time;
+                    if (warpShootTimer <= 0.0f)
+                    {
+                        warpShootTimer = 1.4f;
+                        int spawned = 0;
+                        for (int b = 0; b < MAX_COMMANDER_BULLETS && spawned < 2; b++)
+                        {
+                            if (!warpBulletActive[b])
+                            {
+                                warpBulletActive[b] = true;
+                                warpBulletPos[b] = (Vector2){ warpPos.x + (spawned == 0 ? 18.0f : COMMANDER_SIZE - 18.0f), warpPos.y + COMMANDER_SIZE };
+                                spawned++;
+                            }
+                        }
+                        PlaySound(sndWarpShot);
+                    }
+
+                    // Reactive Warp Evasion: If hero bullet gets within direct trajectory
+                    bool threatened = false;
+                    for (int h = 0; h < 2; h++)
+                    {
+                        Vector2 *bPos = (h == 0) ? Hero1BulletPos : Hero2BulletPos;
+                        bool *bActive = (h == 0) ? Hero1BulletActive : Hero2BulletActive;
+                        for (int i = 0; i < 2; i++)
+                        {
+                            if (bActive[i])
+                            {
+                                float dx = fabsf(bPos[i].x - (warpPos.x + COMMANDER_SIZE / 2.0f));
+                                if (dx < 36.0f && bPos[i].y < warpPos.y + 220.0f && bPos[i].y > warpPos.y)
+                                {
+                                    threatened = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (threatened) break;
+                    }
+
+                    // Warp Special Power: Spatial Teleport
+                    warpActionCooldown -= Time;
+                    if ((warpActionCooldown <= 0.0f) || (threatened && warpActionCooldown < 3.2f))
+                    {
+                        warpActionCooldown = 5.0f;
+                        warpPowerTimer = 0.65f;
+                        PlaySound(sndTeleport);
+
+                        // Dimensional repositioning
+                        float newX = (float)GetRandomValue(60, WindowWidth - COMMANDER_SIZE - 60);
+                        float newY = (float)GetRandomValue(90, 200);
+                        warpPos = (Vector2){ newX, newY };
+                    }
+                }
+
+                if (warpPowerTimer > 0.0f)
+                {
+                    warpPowerTimer -= Time;
+                    warpAnimState = 3; // Teleport phase animation sprite
+                }
+                else
+                {
+                    warpAnimState = (fabsf(warpSpeed.x) > 0.0f) ? 2 : 0;
+                }
+            }
+
+            // UPDATE COMMANDER PROJECTILES & HERO COLLISION
+            for (int b = 0; b < MAX_COMMANDER_BULLETS; b++)
+            {
+                // Jammer Bullets
+                if (jammerBulletActive[b])
+                {
+                    jammerBulletPos[b].y += 420.0f * Time;
+                    if (jammerBulletPos[b].y > WindowHeight)
+                    {
+                        jammerBulletActive[b] = false;
+                    }
+                    else if (!deathSequenceActive)
+                    {
+                        Rectangle jbRec = { jammerBulletPos[b].x - 4, jammerBulletPos[b].y, 8, 22 };
+                        Rectangle h1Rec = { Hero1Pos.x - HeroWidth / 2.0f, Hero1Pos.y, HeroWidth, HeroHeight };
+                        Rectangle h2Rec = { Hero2Pos.x - HeroWidth / 2.0f, Hero2Pos.y, HeroWidth, HeroHeight };
+
+                        if (Hero1Lives > 0 && CheckCollisionRecs(jbRec, h1Rec))
+                        {
+                            jammerBulletActive[b] = false;
+                            Hero1Lives--;
+                            Hero1HitsTaken++;
+                            hero1HitFlashTimer = 0.35f;
+                            PlaySound(heroOuch);
+                            if (Hero1Lives <= 0)
+                            {
+                                Hero1CrashPos = Hero1Pos;
+                                PlaySound(heroDeath);
+                                if (Hero2Lives <= 0) { deathSequenceActive = true; deathDelayTimer = 0.0f; }
+                            }
+                        }
+                        else if (Hero2Lives > 0 && CheckCollisionRecs(jbRec, h2Rec))
+                        {
+                            jammerBulletActive[b] = false;
+                            Hero2Lives--;
+                            Hero2HitsTaken++;
+                            hero2HitFlashTimer = 0.35f;
+                            PlaySound(heroOuch);
+                            if (Hero2Lives <= 0)
+                            {
+                                Hero2CrashPos = Hero2Pos;
+                                PlaySound(heroDeath);
+                                if (Hero1Lives <= 0) { deathSequenceActive = true; deathDelayTimer = 0.0f; }
+                            }
+                        }
+                    }
+                }
+
+                // Warp Bullets
+                if (warpBulletActive[b])
+                {
+                    warpBulletPos[b].y += 500.0f * Time;
+                    if (warpBulletPos[b].y > WindowHeight)
+                    {
+                        warpBulletActive[b] = false;
+                    }
+                    else if (!deathSequenceActive)
+                    {
+                        Rectangle wbRec = { warpBulletPos[b].x - 3, warpBulletPos[b].y, 6, 26 };
+                        Rectangle h1Rec = { Hero1Pos.x - HeroWidth / 2.0f, Hero1Pos.y, HeroWidth, HeroHeight };
+                        Rectangle h2Rec = { Hero2Pos.x - HeroWidth / 2.0f, Hero2Pos.y, HeroWidth, HeroHeight };
+
+                        if (Hero1Lives > 0 && CheckCollisionRecs(wbRec, h1Rec))
+                        {
+                            warpBulletActive[b] = false;
+                            Hero1Lives--;
+                            Hero1HitsTaken++;
+                            hero1HitFlashTimer = 0.35f;
+                            PlaySound(heroOuch);
+                            if (Hero1Lives <= 0)
+                            {
+                                Hero1CrashPos = Hero1Pos;
+                                PlaySound(heroDeath);
+                                if (Hero2Lives <= 0) { deathSequenceActive = true; deathDelayTimer = 0.0f; }
+                            }
+                        }
+                        else if (Hero2Lives > 0 && CheckCollisionRecs(wbRec, h2Rec))
+                        {
+                            warpBulletActive[b] = false;
+                            Hero2Lives--;
+                            Hero2HitsTaken++;
+                            hero2HitFlashTimer = 0.35f;
+                            PlaySound(heroOuch);
+                            if (Hero2Lives <= 0)
+                            {
+                                Hero2CrashPos = Hero2Pos;
+                                PlaySound(heroDeath);
+                                if (Hero1Lives <= 0) { deathSequenceActive = true; deathDelayTimer = 0.0f; }
+                            }
+                        }
+                    }
+                }
+            }
 
             // Hero death scream sequence
             if (deathSequenceActive)
@@ -1478,6 +1863,29 @@ int main(void)
                     empShockwaveRadius = 0.0f;
                     hero1HitFlashTimer = 0.0f;
                     hero2HitFlashTimer = 0.0f;
+
+                    SpecialReady = false;
+                    starttimer = false;
+                    ShoabSpecialTime = 0.0f;
+                    Hero1SpecialBulletActive = false;
+
+                    commandersTriggered  = false;
+                    commanderIntroActive = false;
+                    commanderIntroTimer  = 0.0f;
+                    gameTimeDilation     = 1.0f;
+                    jammerActive         = false;
+                    warpActive           = false;
+                    jammerHp             = 0;
+                    warpHp               = 0;
+                    radarJammedTimer     = 0.0f;
+                    jammerPowerTimer     = 0.0f;
+                    warpPowerTimer       = 0.0f;
+
+                    for (int b = 0; b < MAX_COMMANDER_BULLETS; b++)
+                    {
+                        jammerBulletActive[b] = false;
+                        warpBulletActive[b] = false;
+                    }
 
                     minionDeployTimer = 0.0f;
                     for (int m = 0; m < MAX_MINIONS; m++) minionActive[m] = false;
@@ -1700,6 +2108,29 @@ int main(void)
                     hero1HitFlashTimer = 0.0f;
                     hero2HitFlashTimer = 0.0f;
 
+                    SpecialReady = false;
+                    starttimer = false;
+                    ShoabSpecialTime = 0.0f;
+                    Hero1SpecialBulletActive = false;
+
+                    commandersTriggered  = false;
+                    commanderIntroActive = false;
+                    commanderIntroTimer  = 0.0f;
+                    gameTimeDilation     = 1.0f;
+                    jammerActive         = false;
+                    warpActive           = false;
+                    jammerHp             = 0;
+                    warpHp               = 0;
+                    radarJammedTimer     = 0.0f;
+                    jammerPowerTimer     = 0.0f;
+                    warpPowerTimer       = 0.0f;
+
+                    for (int b = 0; b < MAX_COMMANDER_BULLETS; b++)
+                    {
+                        jammerBulletActive[b] = false;
+                        warpBulletActive[b] = false;
+                    }
+
                     minionDeployTimer = 0.0f;
                     for (int m = 0; m < MAX_MINIONS; m++) minionActive[m] = false;
                     for (int mb = 0; mb < MAX_MINION_BULLETS; mb++) minionBulletActive[mb] = false;
@@ -1733,9 +2164,9 @@ int main(void)
                 if (IsKeyPressed(KEY_ESCAPE))
                 {
                     PlaySound(menuSelect);
-                    StopMusicStream(bgmWin);
-                    winBgmStarted = false;
-                    winDialogueIndex = 0;
+                    StopMusicStream(bgmLost);
+                    lostBgmStarted = false;
+                    lostDialogueIndex = 0;
                     CurrentState = STATE_MENU;
                     PlayMusicStream(bgmMenu);
                 }
@@ -1745,13 +2176,41 @@ int main(void)
                 continue;
             }
 
-            // Boss Trigger check
-            if (AliensKilled == AlienInX * AlienInY && !bossSpawned)
+            // Boss Trigger check: Boss will only spawn if all aliens are dead AND both commanders are eliminated AND at least one hero is alive
+            if (AliensKilled == AlienInX * AlienInY && !bossSpawned && !jammerActive && !warpActive && !commanderIntroActive)
             {
-                bossSpawned = true;
-                bossWarningActive = true;
-                bossWarningTimer = 0.0f;
-                PlayMusicStream(bgmBoss);
+                if ((Hero1Lives > 0 || Hero2Lives > 0) && !GameOver && !deathSequenceActive)
+                {
+                    bossSpawned = true;
+                    bossWarningActive = true;
+                    bossWarningTimer = 0.0f;
+                    PlayMusicStream(bgmBoss);
+
+                    // Add 2 extra lives to both heroes (Revives fallen teammate if one survived)
+                    if (Hero1Lives <= 0)
+                    {
+                        Hero1Lives = 2;
+                        Hero1Pos = (Hero1CrashPos.x != 0) ? Hero1CrashPos : (Vector2){ WindowWidth * 0.35f, WindowHeight - HeroHeight };
+                        hero1ReviveTimer = 0.0f;
+                    }
+                    else
+                    {
+                        Hero1Lives += 2;
+                    }
+
+                    if (Hero2Lives <= 0)
+                    {
+                        Hero2Lives = 2;
+                        Hero2Pos = (Hero2CrashPos.x != 0) ? Hero2CrashPos : (Vector2){ WindowWidth * 0.65f, WindowHeight - HeroHeight };
+                        hero2ReviveTimer = 0.0f;
+                    }
+                    else
+                    {
+                        Hero2Lives += 2;
+                    }
+
+                    PlaySound(cheer);
+                }
             }
 
             // Boss Warning Screen (3 seconds)
@@ -1763,6 +2222,19 @@ int main(void)
                     char warnText[] = "WARNING!! that boss has arrived";
                     int wWidth = MeasureText(warnText, 48);
                     DrawText(warnText, (WindowWidth - wWidth) / 2, WindowHeight / 2 - 30, 48, RED);
+                }
+
+                // Visual text notification shown directly above the heroes
+                const char* extraLifeTxt = "2 extra lives have been added";
+                int elw = MeasureText(extraLifeTxt, 18);
+                if (Hero1Lives > 0)
+                {
+                    DrawText(extraLifeTxt, (int)Hero1Pos.x - elw / 2, (int)Hero1Pos.y - 48, 18, LIME);
+                }
+                if (Hero2Lives > 0)
+                {
+                    float yOffset = (fabsf(Hero1Pos.x - Hero2Pos.x) < elw) ? 72.0f : 48.0f;
+                    DrawText(extraLifeTxt, (int)Hero2Pos.x - elw / 2, (int)Hero2Pos.y - (int)yOffset, 18, YELLOW);
                 }
 
                 if (bossWarningTimer >= 3.0f)
@@ -1892,6 +2364,15 @@ int main(void)
                 }
             }
 
+            // SHOAB SPECIAL BULLET FIRING INPUT
+            if (SpecialReady && IsKeyPressed(KEY_Q) && Hero1Lives > 0 && !deathSequenceActive && !bossWarningActive)
+            {
+                Hero1SpecialBulletPos = (Vector2){ Hero1Pos.x, Hero1Pos.y };
+                Hero1SpecialBulletActive = true;
+                ShoabSpecialTime = 0;
+                SpecialReady = false;
+            }
+
             // Tactical Feature 2: Orbital EMP Drop Trigger & Update
             if (bossActive && !empDropped && bossLeftPodHp <= 0 && bossRightPodHp <= 0)
             {
@@ -1979,6 +2460,44 @@ int main(void)
                             }
                         }
 
+                        // Collision with Jammer Commander
+                        if (jammerActive && bActive[i])
+                        {
+                            Rectangle jRec = { jammerPos.x, jammerPos.y, COMMANDER_SIZE, COMMANDER_SIZE };
+                            if (CheckCollisionRecs(bRec, jRec))
+                            {
+                                PlaySound(damage);
+                                bActive[i] = false;
+                                jammerHp--;
+                                *hScore += 50;
+                                if (jammerHp <= 0)
+                                {
+                                    jammerActive = false;
+                                    *hScore += 500;
+                                    PlaySound(sndJammerDeath);
+                                }
+                            }
+                        }
+
+                        // Collision with Warp Commander
+                        if (warpActive && bActive[i])
+                        {
+                            Rectangle wRec = { warpPos.x, warpPos.y, COMMANDER_SIZE, COMMANDER_SIZE };
+                            if (CheckCollisionRecs(bRec, wRec))
+                            {
+                                PlaySound(damage);
+                                bActive[i] = false;
+                                warpHp--;
+                                *hScore += 50;
+                                if (warpHp <= 0)
+                                {
+                                    warpActive = false;
+                                    *hScore += 500;
+                                    PlaySound(sndWarpDeath);
+                                }
+                            }
+                        }
+
                         // Collision with Medium Minion Aliens
                         if (bossActive && bActive[i])
                         {
@@ -2061,6 +2580,136 @@ int main(void)
                             }
                         }
                     }
+                }
+            }
+
+            // SHOAB SPECIAL BULLET MOVEMENT & MULTI-TARGET COLLISION
+            if (Hero1SpecialBulletActive)
+            {
+                Hero1SpecialBulletPos.y -= BulletSpeedY * Time;
+                Rectangle SpecialBulletRec = { Hero1SpecialBulletPos.x - BulletWidth / 2.0f, Hero1SpecialBulletPos.y, BulletWidth, BulletHeight * 5 };
+
+                // Piercing hit through standard aliens
+                if (!bossActive && !bossSpawned)
+                {
+                    for (int i = 0; i < AlienInX; i++)
+                    {
+                        for (int j = 0; j < AlienInY; j++)
+                        {
+                            if (AlienAlive[i][j])
+                            {
+                                Rectangle AlienRec = { AlienPos[i][j].x, AlienPos[i][j].y, AlienSize, AlienSize };
+                                if (CheckCollisionRecs(SpecialBulletRec, AlienRec))
+                                {
+                                    AlienAlive[i][j] = false;
+                                    AliensKilled++;
+                                    Hero1Score += 100;
+                                    Hero1Kills++;
+                                    PlaySound(damage);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Penetrating hit on Jammer Commander
+                if (jammerActive)
+                {
+                    Rectangle jRec = { jammerPos.x, jammerPos.y, COMMANDER_SIZE, COMMANDER_SIZE };
+                    if (CheckCollisionRecs(SpecialBulletRec, jRec))
+                    {
+                        PlaySound(damage);
+                        jammerHp--;
+                        Hero1Score += 50;
+                        if (jammerHp <= 0)
+                        {
+                            jammerActive = false;
+                            Hero1Score += 500;
+                            PlaySound(sndJammerDeath);
+                        }
+                    }
+                }
+
+                // Penetrating hit on Warp Commander
+                if (warpActive)
+                {
+                    Rectangle wRec = { warpPos.x, warpPos.y, COMMANDER_SIZE, COMMANDER_SIZE };
+                    if (CheckCollisionRecs(SpecialBulletRec, wRec))
+                    {
+                        PlaySound(damage);
+                        warpHp--;
+                        Hero1Score += 50;
+                        if (warpHp <= 0)
+                        {
+                            warpActive = false;
+                            Hero1Score += 500;
+                            PlaySound(sndWarpDeath);
+                        }
+                    }
+                }
+
+                // Penetrating hit on Minions and Boss
+                if (bossActive)
+                {
+                    for (int m = 0; m < MAX_MINIONS; m++)
+                    {
+                        if (minionActive[m])
+                        {
+                            Rectangle mRec = { minionPos[m].x, minionPos[m].y, MinionSize, MinionSize };
+                            if (CheckCollisionRecs(SpecialBulletRec, mRec))
+                            {
+                                PlaySound(damage);
+                                minionHp[m]--;
+                                if (minionHp[m] <= 0)
+                                {
+                                    minionActive[m] = false;
+                                    Hero1Score += 150;
+                                    Hero1Kills++;
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle leftPodRec  = { bossPos.x + 8, bossPos.y + 70, 75, 110 };
+                    Rectangle rightPodRec = { bossPos.x + BossWidth - 83, bossPos.y + 70, 75, 110 };
+                    Rectangle coreRec     = { bossPos.x + 85, bossPos.y + 35, 130, 130 };
+
+                    if (bossLeftPodHp > 0 && CheckCollisionRecs(SpecialBulletRec, leftPodRec))
+                    {
+                        PlaySound(damage);
+                        bossLeftPodHp -= 2;
+                        Hero1Score += 25;
+                        Hero1BossDamage += 2;
+                        if (bossLeftPodHp <= 0) { bossLeftPodHp = 0; Hero1Score += 250; }
+                    }
+                    else if (bossRightPodHp > 0 && CheckCollisionRecs(SpecialBulletRec, rightPodRec))
+                    {
+                        PlaySound(damage);
+                        bossRightPodHp -= 2;
+                        Hero1Score += 25;
+                        Hero1BossDamage += 2;
+                        if (bossRightPodHp <= 0) { bossRightPodHp = 0; Hero1Score += 250; }
+                    }
+                    else if (CheckCollisionRecs(SpecialBulletRec, coreRec))
+                    {
+                        if (bossLeftPodHp > 0 || bossRightPodHp > 0)
+                        {
+                            PlaySound(damage);
+                        }
+                        else
+                        {
+                            PlaySound(damage);
+                            bossHp -= 2;
+                            Hero1Score += 50;
+                            Hero1BossDamage += 2;
+                            if (bossHp <= 0) { bossHp = 0; bossActive = false; bossDefeated = true; }
+                        }
+                    }
+                }
+
+                if (Hero1SpecialBulletPos.y < 0)
+                {
+                    Hero1SpecialBulletActive = false;
                 }
             }
 
@@ -2366,7 +3015,7 @@ int main(void)
                     }
                 }
 
-                // Attack 3: 6 Circular Projectiles every 4s
+                // Attack 3: 6 Circular Projectiles every 4s (causes jamming and slow)
                 bossOrbTimer += Time;
                 if (bossOrbTimer >= 4.0f && !deathSequenceActive)
                 {
@@ -2568,9 +3217,30 @@ int main(void)
                 }
             }
 
+            // DRAW SHOAB'S SPECIAL PIERCING BEAM
+            if (Hero1SpecialBulletActive)
+            {
+                DrawRectangle((int)(Hero1SpecialBulletPos.x - BulletWidth / 2.0f), (int)Hero1SpecialBulletPos.y, BulletWidth, BulletHeight * 5, WHITE);
+            }
+
             if (AlienBulletActive)
             {
                 DrawRectangle((int)(AlienBulletPos.x - AlienBulletWidth / 2.0f), (int)AlienBulletPos.y, AlienBulletWidth, AlienBulletHeight, RED);
+            }
+
+            // DRAW COMMANDER BULLETS
+            for (int b = 0; b < MAX_COMMANDER_BULLETS; b++)
+            {
+                if (jammerBulletActive[b])
+                {
+                    DrawRectangle((int)(jammerBulletPos[b].x - 4), (int)jammerBulletPos[b].y, 8, 22, (Color){ 200, 70, 255, 255 });
+                    DrawCircle((int)jammerBulletPos[b].x, (int)jammerBulletPos[b].y + 11, 6.0f, Fade((Color){ 230, 120, 255, 255 }, 0.5f));
+                }
+                if (warpBulletActive[b])
+                {
+                    DrawRectangle((int)(warpBulletPos[b].x - 3), (int)warpBulletPos[b].y, 6, 26, SKYBLUE);
+                    DrawRectangle((int)(warpBulletPos[b].x - 1), (int)warpBulletPos[b].y + 4, 2, 18, WHITE);
+                }
             }
 
             // DRAW MEDIUM-SIZED MINION BULLETS
@@ -2607,6 +3277,45 @@ int main(void)
                     DrawCircleLines((int)empShockwaveCenter.x, (int)empShockwaveCenter.y, empShockwaveRadius, Fade(SKYBLUE, shockFade));
                     DrawCircleLines((int)empShockwaveCenter.x, (int)empShockwaveCenter.y, empShockwaveRadius + 4.0f, Fade(WHITE, shockFade * 0.7f));
                 }
+            }
+
+            // DRAW ACTIVE ELITE COMMANDERS
+            if (jammerActive)
+            {
+                Rectangle jRec = { jammerPos.x, jammerPos.y, COMMANDER_SIZE, COMMANDER_SIZE };
+                DrawTexturePro(jammerTex[jammerAnimState], (Rectangle){ 0, 0, (float)jammerTex[jammerAnimState].width, (float)jammerTex[jammerAnimState].height }, jRec, (Vector2){ 0, 0 }, 0.0f, WHITE);
+                DrawRectangle((int)jammerPos.x + 8, (int)jammerPos.y - 10, (int)((COMMANDER_SIZE - 16) * ((float)jammerHp / jammerMaxHp)), 5, (Color){ 200, 80, 255, 255 });
+                DrawRectangleLines((int)jammerPos.x + 8, (int)jammerPos.y - 10, COMMANDER_SIZE - 16, 5, WHITE);
+            }
+
+            if (warpActive)
+            {
+                Rectangle wRec = { warpPos.x, warpPos.y, COMMANDER_SIZE, COMMANDER_SIZE };
+                DrawTexturePro(warpTex[warpAnimState], (Rectangle){ 0, 0, (float)warpTex[warpAnimState].width, (float)warpTex[warpAnimState].height }, wRec, (Vector2){ 0, 0 }, 0.0f, WHITE);
+                DrawRectangle((int)warpPos.x + 8, (int)warpPos.y - 10, (int)((COMMANDER_SIZE - 16) * ((float)warpHp / warpMaxHp)), 5, SKYBLUE);
+                DrawRectangleLines((int)warpPos.x + 8, (int)warpPos.y - 10, COMMANDER_SIZE - 16, 5, WHITE);
+            }
+
+            // DRAW COMMANDER INTRO EFFECTS
+            if (commanderIntroActive)
+            {
+                float vignettePulse = fabsf(sinf((float)GetTime() * 10.0f));
+
+                // Temporal distortion overlay
+                DrawRectangle(0, 0, WindowWidth, WindowHeight, Fade(DARKPURPLE, 0.18f + 0.10f * vignettePulse));
+
+                // Horizontal glitch scanlines
+                for (int y = 0; y < WindowHeight; y += 45)
+                {
+                    float alpha = ((int)(GetTime() * 20.0f) % 2 == 0) ? 0.25f : 0.08f;
+                    DrawLine(0, y, WindowWidth, y, Fade(SKYBLUE, alpha));
+                }
+
+                // Target reticles at spawn positions
+                Vector2 jammerTarget = { WindowWidth * 0.25f, 130.0f + COMMANDER_SIZE / 2.0f };
+                Vector2 warpTarget   = { WindowWidth * 0.75f, 130.0f + COMMANDER_SIZE / 2.0f };
+                DrawCircleLines((int)jammerTarget.x, (int)jammerTarget.y, 38.0f, Fade((Color){ 200, 80, 255, 255 }, vignettePulse));
+                DrawCircleLines((int)warpTarget.x, (int)warpTarget.y, 38.0f, Fade(SKYBLUE, vignettePulse));
             }
 
             // DRAW BOSS, SHIELDS and MEDIUM-SIZED MINION ALIENS
@@ -2789,7 +3498,7 @@ int main(void)
                 }
             }
 
-            // DRAW HERO 1: SHOAB
+            // DRAW HERO 1: SHOAB[cite: 2]
             if (Hero1Lives > 0)
             {
                 Rectangle h1Dest = { Hero1Pos.x - HeroWidth / 2.0f, Hero1Pos.y, HeroWidth, HeroHeight };
@@ -2809,7 +3518,7 @@ int main(void)
                 }
             }
 
-            // DRAW HERO 2: NAYEMUL
+            // DRAW HERO 2: NAYEMUL[cite: 1]
             if (Hero2Lives > 0)
             {
                 Vector2 h2Center = { Hero2Pos.x, Hero2Pos.y + HeroHeight / 2.0f };
@@ -2877,9 +3586,33 @@ int main(void)
 
             int text1X = b1X + bSize + 14;
             DrawText("PILOT 1: SHOAB", text1X, 18, 20, LIME);
-            DrawText(TextFormat("LIVES: %d / 4", Hero1Lives), text1X, 42, 20, (Hero1Lives <= 1) ? RED : LIME);
-            DrawText(TextFormat("SCORE: %05d", Hero1Score), text1X, 66, 20, (Color){ 180, 255, 180, 255 });
-            DrawText("[A/D] Move  |  [W/SPACE] Shoot", text1X, 90, 14, LIGHTGRAY);
+
+            // Null-Vector Jammer Radar Disruption: Hides HUD status
+            if (radarJammedTimer > 0.0f)
+            {
+                DrawRectangle(text1X - 4, 40, 240, 68, Fade(BLACK, 0.88f));
+                DrawRectangleLines(text1X - 4, 40, 240, 68, Fade((Color){ 200, 80, 255, 255 }, 0.8f));
+                DrawText("[ RADAR JAMMED ]", text1X + 10, 48, 17, (Color){ 200, 80, 255, 255 });
+                DrawText(TextFormat("SIGNAL LOST // 0x%04X", GetRandomValue(0x1000, 0xFFFF)), text1X + 10, 72, 14, RED);
+            }
+            else
+            {
+                DrawText(TextFormat("LIVES: %d / 4", Hero1Lives), text1X, 42, 20, (Hero1Lives <= 1) ? RED : LIME);
+                DrawText(TextFormat("SCORE: %05d", Hero1Score), text1X, 66, 20, (Color){ 180, 255, 180, 255 });
+                DrawText("[A/D] Move  |  [W/SPACE] Shoot", text1X, 90, 14, LIGHTGRAY);
+            }
+
+            // SHOAB SPECIAL ABILITY HUD STATUS
+            if (ShoabSpecialTime >= FPS * 15.0f)
+            {
+                DrawText("[Q] SPECIAL READY", 30, 122, 14, LIME);
+                SpecialReady = true;
+            }
+            else
+            {
+                DrawText(TextFormat("[Q] SPECIAL READY IN %.1f s", 15.0f - ShoabSpecialTime / FPS), 30, 122, 14, RED);
+                SpecialReady = false;
+            }
 
             // TOP-RIGHT HUD: NAYEMUL'S REACTIVE PORTRAIT BADGE and STATS
             int b2X = WindowWidth - 30 - bSize, b2Y = 18;
@@ -2928,17 +3661,29 @@ int main(void)
             int p2tW = MeasureText(pilot2Title, 20);
             DrawText(pilot2Title, b2X - 14 - p2tW, 18, 20, YELLOW);
 
-            const char* p2LivesText = TextFormat("LIVES: %d / 4", Hero2Lives);
-            int p2lW = MeasureText(p2LivesText, 20);
-            DrawText(p2LivesText, b2X - 14 - p2lW, 42, 20, (Hero2Lives <= 1) ? RED : YELLOW);
+            // Null-Vector Jammer Radar Disruption: Hides HUD status
+            if (radarJammedTimer > 0.0f)
+            {
+                int jamW = 240;
+                DrawRectangle(b2X - 14 - jamW, 40, jamW, 68, Fade(BLACK, 0.88f));
+                DrawRectangleLines(b2X - 14 - jamW, 40, jamW, 68, Fade((Color){ 200, 80, 255, 255 }, 0.8f));
+                DrawText("[ RADAR JAMMED ]", b2X - jamW, 48, 17, (Color){ 200, 80, 255, 255 });
+                DrawText(TextFormat("SIGNAL LOST // 0x%04X", GetRandomValue(0x1000, 0xFFFF)), b2X - jamW, 72, 14, RED);
+            }
+            else
+            {
+                const char* p2LivesText = TextFormat("LIVES: %d / 4", Hero2Lives);
+                int p2lW = MeasureText(p2LivesText, 20);
+                DrawText(p2LivesText, b2X - 14 - p2lW, 42, 20, (Hero2Lives <= 1) ? RED : YELLOW);
 
-            const char* p2ScoreText = TextFormat("SCORE: %05d", Hero2Score);
-            int p2sW = MeasureText(p2ScoreText, 20);
-            DrawText(p2ScoreText, b2X - 14 - p2sW, 66, 20, (Color){ 255, 245, 160, 255 });
+                const char* p2ScoreText = TextFormat("SCORE: %05d", Hero2Score);
+                int p2sW = MeasureText(p2ScoreText, 20);
+                DrawText(p2ScoreText, b2X - 14 - p2sW, 66, 20, (Color){ 255, 245, 160, 255 });
 
-            const char* p2Controls = "[ARROWS] Move  |  [UP] Shoot";
-            int p2cW = MeasureText(p2Controls, 14);
-            DrawText(p2Controls, b2X - 14 - p2cW, 90, 14, LIGHTGRAY);
+                const char* p2Controls = "[ARROWS] Move  |  [UP] Shoot";
+                int p2cW = MeasureText(p2Controls, 14);
+                DrawText(p2Controls, b2X - 14 - p2cW, 90, 14, LIGHTGRAY);
+            }
 
             if (empBuffTimer > 0.0f)
             {
@@ -3007,6 +3752,12 @@ int main(void)
     if (portraitShoab.id > 0) UnloadTexture(portraitShoab);
     if (portraitNayemul.id > 0) UnloadTexture(portraitNayemul);
 
+    for (int c = 0; c < 4; c++)
+    {
+        UnloadTexture(jammerTex[c]);
+        UnloadTexture(warpTex[c]);
+    }
+
     UnloadSound(shoot);
     UnloadSound(AlienShoot);
     UnloadSound(menuMove);
@@ -3021,6 +3772,15 @@ int main(void)
     UnloadSound(gameOverCommunity);
     UnloadSound(heroOuch);
     UnloadSound(bossLaserSound);
+
+    UnloadSound(sndJammerHum);
+    UnloadSound(sndJammerShot);
+    UnloadSound(sndEmpBlast);
+    UnloadSound(sndJammerDeath);
+    UnloadSound(sndWarpGlide);
+    UnloadSound(sndWarpShot);
+    UnloadSound(sndTeleport);
+    UnloadSound(sndWarpDeath);
 
     UnloadMusicStream(bgmStory);
     UnloadMusicStream(bgmMenu);
