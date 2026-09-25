@@ -298,6 +298,15 @@ int main(void)
     Vector2 warpBulletPos[MAX_COMMANDER_BULLETS];
     bool warpBulletActive[MAX_COMMANDER_BULLETS] = { false };
 
+    Texture2D Hero1SpecialBulletTex[7];
+    Hero1SpecialBulletTex[0] = LoadTexture("assets/sprites/1.png");
+    Hero1SpecialBulletTex[1] = LoadTexture("assets/sprites/2.png");
+    Hero1SpecialBulletTex[2] = LoadTexture("assets/sprites/3.png");
+    Hero1SpecialBulletTex[3] = LoadTexture("assets/sprites/4.png");
+    Hero1SpecialBulletTex[4] = LoadTexture("assets/sprites/5.png");
+    Hero1SpecialBulletTex[5] = LoadTexture("assets/sprites/6.png");
+    Hero1SpecialBulletTex[6] = LoadTexture("assets/sprites/7.png");
+
     Texture2D jammerTex[4];
     jammerTex[0] = LoadTexture("assets/sprites/commander_jammer_idle.png");
     jammerTex[1] = LoadTexture("assets/sprites/commander_jammer_move_y.png");
@@ -1557,7 +1566,9 @@ int main(void)
                     if (Hero1BulletActive[i]) DrawRectangle((int)(Hero1BulletPos[i].x - BulletWidth / 2.0f), (int)Hero1BulletPos[i].y, BulletWidth, BulletHeight, YELLOW);
                     if (Hero2BulletActive[i]) DrawRectangle((int)(Hero2BulletPos[i].x - BulletWidth / 2.0f), (int)Hero2BulletPos[i].y, BulletWidth, BulletHeight, SKYBLUE);
                 }
-                if (Hero1SpecialBulletActive) DrawRectangle((int)(Hero1SpecialBulletPos.x - BulletWidth / 2.0f), (int)Hero1SpecialBulletPos.y, BulletWidth, BulletHeight * 5, WHITE);
+                
+                Rectangle Hero1SpecialBulletRec = { Hero1SpecialBulletPos.x - HeroWidth / 2.0f, Hero1SpecialBulletPos.y, HeroWidth, HeroWidth * 3 };
+                if (Hero1SpecialBulletActive) DrawTexturePro(Hero1SpecialBulletTex[0], (Rectangle){ 0, 0, (float)Hero1SpecialBulletTex[0].width, (float)Hero1SpecialBulletTex[0].height }, Hero1SpecialBulletRec, (Vector2){ 0, 0 }, 0.0f, WHITE);
 
                 for (int m = 0; m < MAX_CLUSTER_MISSILES; m++)
                 {
@@ -2362,11 +2373,11 @@ int main(void)
                 }
             }
 
-            // Shoab special bullet collision
+            // SHOAB SPECIAL BULLET MOVEMENT and COLLISION (MODIFIED EXPANDED HITBOX)
             if (Hero1SpecialBulletActive)
             {
                 Hero1SpecialBulletPos.y -= BulletSpeedY * Time;
-                Rectangle SpecialBulletRec = { Hero1SpecialBulletPos.x - BulletWidth / 2.0f, Hero1SpecialBulletPos.y, BulletWidth, BulletHeight * 5 };
+                Rectangle SpecialBulletRec = { Hero1SpecialBulletPos.x - HeroWidth / 2.0f, Hero1SpecialBulletPos.y, HeroWidth, HeroHeight * 3 };
 
                 if (!bossActive && !bossSpawned)
                 {
@@ -2574,7 +2585,6 @@ int main(void)
                             }
                         }
 
-                        // CLUSTER DAMAGE FIX: -40 HP only to hit pod, and -35 HP to core ONLY after both pods are destroyed
                         if (!clusterBossDamageDealt)
                         {
                             Rectangle leftPodRec  = { bossPos.x + 8, bossPos.y + 70, 75, 110 };
@@ -2584,7 +2594,6 @@ int main(void)
                             bool hitLeftPod  = bossLeftPodHp > 0 && (CheckCollisionRecs(mRec, leftPodRec) || CheckCollisionCircleRec(blastCenter, 40.0f, leftPodRec));
                             bool hitRightPod = bossRightPodHp > 0 && (CheckCollisionRecs(mRec, rightPodRec) || CheckCollisionCircleRec(blastCenter, 40.0f, rightPodRec));
 
-                            // Phase 1: Pods alive -> damage only hit pod by 40, do NOT damage both, do NOT damage core
                             if (bossLeftPodHp > 0 || bossRightPodHp > 0)
                             {
                                 if (hitLeftPod && !hitRightPod)
@@ -2618,12 +2627,11 @@ int main(void)
                                 }
                                 else if (CheckCollisionRecs(mRec, coreRec) || CheckCollisionCircleRec(blastCenter, 50.0f, coreRec))
                                 {
-                                    PlaySound(damage); // Core is immune while either pod stands
+                                    PlaySound(damage);
                                 }
                             }
                             else
                             {
-                                // Phase 2: Both pods broken -> direct core hit deals 35 damage only once per trigger
                                 if (CheckCollisionRecs(mRec, coreRec) || CheckCollisionCircleRec(blastCenter, 50.0f, coreRec))
                                 {
                                     PlaySound(damage); bossHp -= 35; Hero2Score += 500; Hero2BossDamage += 35;
@@ -2971,8 +2979,14 @@ int main(void)
                 if (Hero2BulletActive[i])
                     DrawRectangle((int)(Hero2BulletPos[i].x - BulletWidth / 2.0f), (int)Hero2BulletPos[i].y, BulletWidth, BulletHeight, (empBuffTimer > 0.0f) ? WHITE : SKYBLUE);
             }
+            
+            // DRAW SHOAB'S SPECIAL PIERCING BEAM (ANIMATED THROUGH 7 FLAME TEXTURES)
             if (Hero1SpecialBulletActive)
-                DrawRectangle((int)(Hero1SpecialBulletPos.x - BulletWidth / 2.0f), (int)Hero1SpecialBulletPos.y, BulletWidth, BulletHeight * 5, WHITE);
+            {
+                int sFrame = ((int)(GetTime() * 18.0f)) % 7;
+                Rectangle Hero1SpecialBulletRec = { Hero1SpecialBulletPos.x - HeroWidth / 2.0f, Hero1SpecialBulletPos.y, HeroWidth, HeroWidth * 3 };
+                DrawTexturePro(Hero1SpecialBulletTex[sFrame], (Rectangle){ 0, 0, (float)Hero1SpecialBulletTex[sFrame].width, (float)Hero1SpecialBulletTex[sFrame].height }, Hero1SpecialBulletRec, (Vector2){ 0, 0 }, 0.0f, WHITE);
+            }
 
             for (int m = 0; m < MAX_CLUSTER_MISSILES; m++)
             {
@@ -3612,6 +3626,12 @@ int main(void)
     if (clusterBombTex.id > 0) UnloadTexture(clusterBombTex);
     if (clusterBlastTex.id > 0) UnloadTexture(clusterBlastTex);
     if (teamShieldDomeTex.id > 0) UnloadTexture(teamShieldDomeTex);
+
+    // Unload Shoab's 7 Special Bullet flame textures
+    for (int s = 0; s < 7; s++)
+    {
+        if (Hero1SpecialBulletTex[s].id > 0) UnloadTexture(Hero1SpecialBulletTex[s]);
+    }
 
     for (int c = 0; c < 4; c++) { UnloadTexture(jammerTex[c]); UnloadTexture(warpTex[c]); }
     for (int b = 0; b < 5; b++) UnloadTexture(BossTexture[b]);
