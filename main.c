@@ -2,6 +2,7 @@
 #include "raylib/raylib-6.0_macos/include/raymath.h"
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
@@ -83,8 +84,126 @@ float evacTimer = 0.0f;
 #define STATE_CINEMATIC 7
 #define STATE_SCORES 8
 #define STATE_HOWTOPLAY 9
+#define STATE_VIDEO_PLAY 10
 
 #define STAR_COUNT 90
+
+#define VID_W 640
+#define VID_H 360
+
+static FILE* videoPipe = NULL;
+static Texture2D videoFrameTex = { 0 };
+static Color* videoFramePixels = NULL;
+static float videoTimer = 0.0f;
+static float videoDuration = 0.0f;
+static float videoFrameTimer = 0.0f;
+static int currentVideoType = 0; // 0 = Start Launch, 1 = Game Over, 2 = Game Win
+static bool videoIsPlaying = false;
+static bool hasReceivedFrames = false;
+static bool ffmpegInstalled = true;
+
+const char* GetFFmpegBinary(void)
+{
+    if (FileExists("/opt/homebrew/bin/ffmpeg")) return "/opt/homebrew/bin/ffmpeg";
+    if (FileExists("/usr/local/bin/ffmpeg")) return "/usr/local/bin/ffmpeg";
+    if (FileExists("/usr/bin/ffmpeg")) return "/usr/bin/ffmpeg";
+    return "ffmpeg";
+}
+
+const char* GetVideoPath(int vidType)
+{
+    if (vidType == 0)
+    {
+        if (FileExists("assets/sprites/Starting_Vid.mp4")) return "assets/sprites/Starting_Vid.mp4";
+        if (FileExists("assets/sprites/starting_vid.mp4")) return "assets/sprites/starting_vid.mp4";
+        if (FileExists("assets/sprites/Starting_vid.mp4")) return "assets/sprites/Starting_vid.mp4";
+        if (FileExists("assets/sprites/Start_Vid.mp4")) return "assets/sprites/Start_Vid.mp4";
+        if (FileExists("assets/sprites/launch.mp4")) return "assets/sprites/launch.mp4";
+        if (FileExists("Starting_Vid.mp4")) return "Starting_Vid.mp4";
+        return "assets/sprites/Starting_Vid.mp4";
+    }
+    else if (vidType == 1)
+    {
+        if (FileExists("assets/sprites/Game_over_vid.mp4")) return "assets/sprites/Game_over_vid.mp4";
+        if (FileExists("assets/sprites/game_over_vid.mp4")) return "assets/sprites/game_over_vid.mp4";
+        if (FileExists("assets/sprites/Game_Over_Vid.mp4")) return "assets/sprites/Game_Over_Vid.mp4";
+        if (FileExists("assets/sprites/game_over.mp4")) return "assets/sprites/game_over.mp4";
+        if (FileExists("Game_over_vid.mp4")) return "Game_over_vid.mp4";
+        return "assets/sprites/Game_over_vid.mp4";
+    }
+    else
+    {
+        if (FileExists("assets/sprites/Game_win_vid.mp4")) return "assets/sprites/Game_win_vid.mp4";
+        if (FileExists("assets/sprites/game_win_vid.mp4")) return "assets/sprites/game_win_vid.mp4";
+        if (FileExists("assets/sprites/Game_Win_Vid.mp4")) return "assets/sprites/Game_Win_Vid.mp4";
+        if (FileExists("assets/sprites/game_win.mp4")) return "assets/sprites/game_win.mp4";
+        if (FileExists("Game_win_vid.mp4")) return "Game_win_vid.mp4";
+        return "assets/sprites/Game_win_vid.mp4";
+    }
+}
+
+static bool ReadExactBytes(FILE* stream, void* buffer, size_t total_bytes)
+{
+    if (stream == NULL || buffer == NULL) return false;
+    size_t total_read = 0;
+    char* ptr = (char*)buffer;
+    while (total_read < total_bytes)
+    {
+        size_t bytes_to_read = total_bytes - total_read;
+        size_t n = fread(ptr + total_read, 1, bytes_to_read, stream);
+        if (n == 0)
+        {
+            if (feof(stream) || ferror(stream)) return false;
+        }
+        total_read += n;
+    }
+    return true;
+}
+
+void StartVideo(int vidType, float duration)
+{
+    currentVideoType = vidType;
+    videoDuration = duration;
+    videoTimer = 0.0f;
+    videoFrameTimer = 0.0f;
+    videoIsPlaying = true;
+    hasReceivedFrames = false;
+
+    system("killall afplay 2>/dev/null");
+
+    const char* vPath = GetVideoPath(vidType);
+    char afplayCmd[512];
+    snprintf(afplayCmd, sizeof(afplayCmd), "afplay \"%s\" &", vPath);
+    system(afplayCmd);
+
+    int ffmpegCheck = system("export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"; which ffmpeg > /dev/null 2>&1");
+    if (ffmpegCheck != 0 && !FileExists("/opt/homebrew/bin/ffmpeg") && !FileExists("/usr/local/bin/ffmpeg"))
+    {
+        ffmpegInstalled = false;
+        videoPipe = NULL;
+        return;
+    }
+    ffmpegInstalled = true;
+
+    char ffmpegCmd[1024];
+    snprintf(ffmpegCmd, sizeof(ffmpegCmd),
+        "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"; "
+        "%s -loglevel error -i \"%s\" -an -sn -r 30 -s %dx%d -pix_fmt rgba -f rawvideo -",
+        GetFFmpegBinary(), vPath, VID_W, VID_H);
+
+    videoPipe = popen(ffmpegCmd, "r");
+}
+
+void StopVideo(void)
+{
+    if (videoPipe != NULL)
+    {
+        pclose(videoPipe);
+        videoPipe = NULL;
+    }
+    system("killall afplay 2>/dev/null");
+    videoIsPlaying = false;
+}
 
 void DownAlien(int AlienInX, int AlienInY, Vector2 AlienPos[AlienInX][AlienInY], bool AlienAlive[AlienInX][AlienInY])
 {
@@ -166,6 +285,11 @@ int main(void)
     {
         ChangeDirectory("..");
     }
+
+    Image dummyImg = GenImageColor(VID_W, VID_H, BLACK);
+    videoFrameTex = LoadTextureFromImage(dummyImg);
+    UnloadImage(dummyImg);
+    videoFramePixels = (Color*)malloc(VID_W * VID_H * sizeof(Color));
 
     Vector2 StarPos[STAR_COUNT];
     float StarSpeed[STAR_COUNT];
@@ -1323,7 +1447,9 @@ int main(void)
                 if (launchCountdownTimer <= 0.0f)
                 {
                     StopMusicStream(bgmStory);
-                    CurrentState = STATE_GAMEPLAY;
+                    // Launch cutscene video begins immediately when ships leave screen[cite: 10]
+                    CurrentState = STATE_VIDEO_PLAY;
+                    StartVideo(0, 12.6f);
                     Hero1Pos = (Vector2){ WindowWidth * 0.35f, WindowHeight - HeroHeight };
                     Hero2Pos = (Vector2){ WindowWidth * 0.65f, WindowHeight - HeroHeight };
                 }
@@ -1433,7 +1559,9 @@ int main(void)
                 if (evacTimer <= 0.0f)
                 {
                     evacActive = false;
-                    bossDefeated = true;
+                    // Trigger game victory cutscene video
+                    CurrentState = STATE_VIDEO_PLAY;
+                    StartVideo(2, 10.4f);
                 }
             }
 
@@ -1792,15 +1920,22 @@ int main(void)
                 }
             }
 
-            // Death sequence
+            // Death sequence: starts Game Over cutscene video
             if (deathSequenceActive)
             {
                 deathDelayTimer += Time;
                 if (deathDelayTimer >= 1.2f)
                 {
-                    deathSequenceActive = false; GameOver = true; bossLaserActive = false;
+                    deathSequenceActive = false;
+                    bossLaserActive = false;
                     screenCamera.offset = (Vector2){ 0, 0 };
-                    StopMusicStream(bgmBoss); StopSound(bossLaserSound); StopSound(sndDefibHum); StopSound(sndWarningSiren);
+                    StopMusicStream(bgmBoss);
+                    StopSound(bossLaserSound);
+                    StopSound(sndDefibHum);
+                    StopSound(sndWarningSiren);
+
+                    CurrentState = STATE_VIDEO_PLAY;
+                    StartVideo(1, 10.5f);
                 }
             }
 
@@ -3594,6 +3729,87 @@ int main(void)
                 DrawText(pauseNotice, (WindowWidth - pauseW) / 2, 22, 16, DARKGRAY);
             }
         }
+        // STATE: VIDEO PLAYBACK (CUSTOM VIDEO ENGINE)
+        else if (CurrentState == STATE_VIDEO_PLAY)
+        {
+            videoTimer += rawTime;
+            videoFrameTimer += rawTime;
+
+            if (videoPipe != NULL && videoFramePixels != NULL)
+            {
+                while (videoFrameTimer >= 1.0f / 30.0f)
+                {
+                    videoFrameTimer -= 1.0f / 30.0f;
+                    if (ReadExactBytes(videoPipe, videoFramePixels, VID_W * VID_H * sizeof(Color)))
+                    {
+                        UpdateTexture(videoFrameTex, videoFramePixels);
+                        hasReceivedFrames = true;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+
+            if (hasReceivedFrames && videoFrameTex.id > 0)
+            {
+                DrawTexturePro(videoFrameTex, (Rectangle){ 0, 0, (float)VID_W, (float)VID_H },
+                               (Rectangle){ 0, 0, (float)WindowWidth, (float)WindowHeight },
+                               (Vector2){ 0, 0 }, 0.0f, WHITE);
+            }
+            else
+            {
+                if (!ffmpegInstalled)
+                {
+                    const char* err1 = "FFMPEG NOT FOUND IN SYSTEM PATH";
+                    const char* err2 = "Run 'brew install ffmpeg' in Terminal to enable video rendering.";
+                    const char* err3 = "(Audio playback is currently running in background)";
+                    DrawText(err1, (WindowWidth - MeasureText(err1, 24)) / 2, WindowHeight / 2 - 40, 24, RED);
+                    DrawText(err2, (WindowWidth - MeasureText(err2, 18)) / 2, WindowHeight / 2, 18, YELLOW);
+                    DrawText(err3, (WindowWidth - MeasureText(err3, 16)) / 2, WindowHeight / 2 + 30, 16, LIGHTGRAY);
+                }
+                else
+                {
+                    DrawText("BUFFERING VIDEO STREAM...", (WindowWidth - MeasureText("BUFFERING VIDEO STREAM...", 24)) / 2, WindowHeight / 2 - 12, 24, DARKGRAY);
+                }
+            }
+
+            // Bold "Replay" in Red at top-left corner for Game Over (1) and Game Win (2)
+            if (currentVideoType == 1 || currentVideoType == 2)
+            {
+                DrawText("Replay", 42, 42, 38, Fade(BLACK, 0.85f));
+                DrawText("Replay", 40, 42, 38, MAROON);
+                DrawText("Replay", 40, 40, 38, RED);
+                DrawText("Replay", 41, 40, 38, RED);
+            }
+
+            const char* skipVidTxt = "PRESS [SPACE] OR [ENTER] TO SKIP";
+            if (((int)(GetTime() * 3)) % 2 == 0)
+            {
+                DrawText(skipVidTxt, (WindowWidth - MeasureText(skipVidTxt, 18)) / 2, WindowHeight - 45, 18, Fade(RAYWHITE, 0.85f));
+            }
+
+            bool skipPressed = IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_ENTER);
+            if (skipPressed || videoTimer >= videoDuration)
+            {
+                StopVideo();
+                if (currentVideoType == 0)
+                {
+                    CurrentState = STATE_GAMEPLAY;
+                }
+                else if (currentVideoType == 1)
+                {
+                    CurrentState = STATE_GAMEPLAY;
+                    GameOver = true;
+                }
+                else if (currentVideoType == 2)
+                {
+                    CurrentState = STATE_GAMEPLAY;
+                    bossDefeated = true;
+                }
+            }
+        }
 
         // Full-Screen White-Out Blind for Evacuation Sequence
         if (evacActive && evacTimer > 3.4f)
@@ -3615,6 +3831,11 @@ int main(void)
 
         EndDrawing();
     }
+
+    // Stop and cleanup active video playback
+    StopVideo();
+    if (videoFrameTex.id > 0) UnloadTexture(videoFrameTex);
+    if (videoFramePixels != NULL) free(videoFramePixels);
 
     // Cleanup
     UnloadTexture(HeroTexture); UnloadTexture(StealthHeroTexture);
