@@ -86,35 +86,41 @@ Players fight side-by-side through synchronized alien attack formations, survive
 
 ---
 
-👥 Developers & Project Credits:
-Developed as an academic and competitive engineering project at Bangladesh University of Engineering and Technology (BUET).
-Core Contributors:
-Nayemul Islam (Lead Developer) — Roll 2505087, CSE Section B:
-1.)Engineered the MacBook native Spaces borderless fullscreen engine and Cocoa window bridge.
-2.)Implemented unified [M] key navigation across all game states, menus, and debriefing screens.
-3.)Designed interactive drifting metallic asteroids, dynamic space cover, and physical deflections.
-4.)Added asteroid 60% engine slowdown penalties, collision sparks, and shatter rewards.
-5.)Implemented the "Two Flavors of Freeze": 0.18s Activation Super-Pause with chromatic screen flare.
-6.)Implemented kinetic impact hit-stop frame freezing on laser piercing and missile impacts.
-7.)Created interceptor canopy glass specular reflections responding to laser fire.
-8.)Designed Last Stand Overdrive: 2.5s rapid plasma surge and shield flaring on wingman crash.
-9.)Implemented layered dynamic Nebula gas clouds drifting across exospheric deep space.
-10.)Added atmospheric space lightning flashes triggered by enemy telemetry pulses.
-11.)Built high-tech glassmorphic cockpit comms dialogue boxes and cybernetic corner brackets.
-12.)Designed real-time international breaking news broadcast chyron interface with live bugs.
-13.)Created Alien Dreadnought Overlord encrypted glitch-frequency warning boxes.
-14.)Authored full interactive Story Mode, narrative, and emergency defense broadcasts.
-15.)Built Dreadnought Carrier Boss mechanics, bilateral deflector pods, and enrage modes.
-16.)Designed Alien Commanders: Jammer HUD jamming and Warp micro-teleportation systems.
-17.)Engineered Hero 8-Way Guided Cluster Salvo with expanding destructive kinetic blast radii.
-18.)Directed and balanced 98% of in-game audio sound effects and multi-track combat BGM.
-19.)Built 3-layer parallax star engine, CRT scanlines, and End-of-Run Rank Plaque Grading.
-Md. Shoab Mahmud (Co-Developer) — Roll 2505066, CSE Section B:
-1.)Built the basic core foundation and base loop of the game.
-2.)Worked with regular alien sprites, grid positioning, and sound fx.
-3.)Added the sprite and flight mechanics of the Scorpion Hero (Aegis-1).
-4.)Implemented the special Hyper Laser Beam feature of Scorpion.
-5.)Added custom sprites and sound effects for the Scorpion Laser Beam.
-6.)Coordinated and assisted Nayemul in feature implementations and debugging.
-7.)Defined initial functions and mechanisms reused throughout the game.
-8.)Identified and fixed the primary alien movement and boundary bounce bug.
+## 👥 Developers & Project Credits
+
+Developed as an academic and competitive engineering project at **Bangladesh University of Engineering and Technology (BUET)**.
+
+### Core Contributors
+
+#### **Nayemul Islam (Lead Developer)** — *Roll 2505087, CSE Section B*
+
+1. Engineered the MacBook native Spaces borderless fullscreen engine and Cocoa window bridge.
+2. Implemented unified `[M]` key navigation across all game states, menus, and debriefing screens.
+3. Designed interactive drifting metallic asteroids, dynamic space cover, and physical deflections.
+4. Added asteroid 60% engine slowdown penalties, collision sparks, and shatter rewards.
+5. Implemented the "Two Flavors of Freeze": 0.18s Activation Super-Pause with chromatic screen flare.
+6. Implemented kinetic impact hit-stop frame freezing on laser piercing and missile impacts.
+7. Created interceptor canopy glass specular reflections responding to laser fire.
+8. Designed Last Stand Overdrive: 2.5s rapid plasma surge and shield flaring on wingman crash.
+9. Implemented layered dynamic Nebula gas clouds drifting across exospheric deep space.
+10. Added atmospheric space lightning flashes triggered by enemy telemetry pulses.
+11. Built high-tech glassmorphic cockpit comms dialogue boxes and cybernetic corner brackets.
+12. Designed real-time international breaking news broadcast chyron interface with live bugs.
+13. Created Alien Dreadnought Overlord encrypted glitch-frequency warning boxes.
+14. Authored full interactive Story Mode, narrative, and emergency defense broadcasts.
+15. Built Dreadnought Carrier Boss mechanics, bilateral deflector pods, and enrage modes.
+16. Designed Alien Commanders: Jammer HUD jamming and Warp micro-teleportation systems.
+17. Engineered Hero 8-Way Guided Cluster Salvo with expanding destructive kinetic blast radii.
+18. Directed and balanced 98% of in-game audio sound effects and multi-track combat BGM.
+19. Built 3-layer parallax star engine, CRT scanlines, and End-of-Run Rank Plaque Grading.
+
+#### **Md. Shoab Mahmud (Co-Developer)** — *Roll 2505066, CSE Section B*
+
+1. Built the basic core foundation and base loop of the game.
+2. Worked with regular alien sprites, grid positioning, and sound fx.
+3. Added the sprite and flight mechanics of the Scorpion Hero (Aegis-1).
+4. Implemented the special Hyper Laser Beam feature of Scorpion.
+5. Added custom sprites and sound effects for the Scorpion Laser Beam.
+6. Coordinated and assisted Nayemul in feature implementations and debugging.
+7. Defined initial functions and mechanisms reused throughout the game.
+8. Identified and fixed the primary alien movement and boundary bounce bug.
