@@ -262,6 +262,119 @@ typedef struct {
     int targetedHero;      // 1 = Shoab, 2 = Nayemul
 } VoidEntity;
 
+// Permanent Match History Record Structure (with Pilot Names)
+#define MAX_MATCH_RECORDS 100
+#define HISTORY_FILE "match_history.dat"
+#define CAREER_FILE "hero_profiles.dat"
+
+typedef struct {
+    bool isVictory;
+    float runTime;
+    char hero1PilotName[24];
+    char hero2PilotName[24];
+    int hero1Score;
+    int hero2Score;
+    int hero1Kills;
+    int hero2Kills;
+    int hero1BossDamage;
+    int hero2BossDamage;
+    int hero1HitsTaken;
+    int hero2HitsTaken;
+} MatchRecord;
+
+// Permanent Career State for Both Hero Ships
+typedef struct {
+    char callsign[32];
+    char shipTitle[32];
+    int totalMissions;
+    int totalVictories;
+    int totalDefeats;
+    long totalScore;
+    int totalAlienKills;
+    int totalMinionKills;
+    int totalBossDamage;
+    int totalHitsTaken;
+} HeroCareerProfile;
+
+// Load all saved gameplay records (most recent first)
+int LoadMatchRecords(MatchRecord records[], int maxCount)
+{
+    FILE* f = fopen(HISTORY_FILE, "rb");
+    if (!f) return 0;
+    int count = (int)fread(records, sizeof(MatchRecord), maxCount, f);
+    fclose(f);
+    return count;
+}
+
+// Permanently prepend the newest match record to the top of the file
+void SaveMatchRecord(MatchRecord newRec)
+{
+    MatchRecord existing[MAX_MATCH_RECORDS];
+    int count = LoadMatchRecords(existing, MAX_MATCH_RECORDS - 1);
+
+    FILE* f = fopen(HISTORY_FILE, "wb");
+    if (!f) return;
+
+    // Write new record at index 0 (top/most recent)
+    fwrite(&newRec, sizeof(MatchRecord), 1, f);
+
+    // Append previous records behind it
+    if (count > 0)
+    {
+        fwrite(existing, sizeof(MatchRecord), count, f);
+    }
+    fclose(f);
+}
+
+// Load Hero Profiles from permanent disk
+void LoadHeroProfiles(HeroCareerProfile profiles[2])
+{
+    FILE* f = fopen(CAREER_FILE, "rb");
+    if (f)
+    {
+        fread(profiles, sizeof(HeroCareerProfile), 2, f);
+        fclose(f);
+    }
+    else
+    {
+        // Default Initialization
+        strcpy(profiles[0].callsign, "AEGIS-1");
+        strcpy(profiles[0].shipTitle, "Shoab's Interceptor Alpha");
+        profiles[0].totalMissions = 0;
+        profiles[0].totalVictories = 0;
+        profiles[0].totalDefeats = 0;
+        profiles[0].totalScore = 0;
+        profiles[0].totalAlienKills = 0;
+        profiles[0].totalMinionKills = 0;
+        profiles[0].totalBossDamage = 0;
+        profiles[0].totalHitsTaken = 0;
+
+        strcpy(profiles[1].callsign, "SHADOW-2");
+        strcpy(profiles[1].shipTitle, "Nayemul's Stealth Beta");
+        profiles[1].totalMissions = 0;
+        profiles[1].totalVictories = 0;
+        profiles[1].totalDefeats = 0;
+        profiles[1].totalScore = 0;
+        profiles[1].totalAlienKills = 0;
+        profiles[1].totalMinionKills = 0;
+        profiles[1].totalBossDamage = 0;
+        profiles[1].totalHitsTaken = 0;
+
+        FILE* fw = fopen(CAREER_FILE, "wb");
+        if (fw) { fwrite(profiles, sizeof(HeroCareerProfile), 2, fw); fclose(fw); }
+    }
+}
+
+// Save Hero Profiles to permanent disk
+void SaveHeroProfiles(HeroCareerProfile profiles[2])
+{
+    FILE* f = fopen(CAREER_FILE, "wb");
+    if (f) {
+        fwrite(profiles, sizeof(HeroCareerProfile), 2, f);
+        fclose(f);
+    }
+}
+
 #ifndef PI
 #define PI 3.14159265358979323846f //finally,fixed this problem,thanks to MMAK sir :)
 #endif
@@ -278,6 +391,9 @@ typedef struct {
 #define STATE_SCORES 8
 #define STATE_HOWTOPLAY 9
 #define STATE_VIDEO_PLAY 10
+#define STATE_HISTORY 11
+#define STATE_CAREER 12
+#define STATE_NAME_ENTRY 13
 
 #define STAR_COUNT 90
 
@@ -481,7 +597,7 @@ void DrawCyberBox(Rectangle rec, Color borderColor, Color bgColor, const char* t
     DrawLineEx((Vector2){ rec.x - 3, rec.y + rec.height + 3 }, (Vector2){ rec.x - 3, rec.y + rec.height - arm }, 3.0f, titleColor);
 
     DrawLineEx((Vector2){ rec.x + rec.width + 3, rec.y + rec.height + 3 }, (Vector2){ rec.x + rec.width - arm, rec.y + rec.height + 3 }, 3.0f, titleColor);
-    DrawLineEx((Vector2){ rec.x + rec.width + 3, rec.y + rec.height + 3 }, (Vector2){ rec.x + rec.width + 3, rec.y + arm }, 3.0f, titleColor);
+    DrawLineEx((Vector2){ rec.x + rec.width + 3, rec.y + rec.height + 3 }, (Vector2){ rec.x + rec.width + 3, rec.y + rec.height - arm }, 3.0f, titleColor);
 
     if (title != NULL && strlen(title) > 0)
     {
@@ -719,6 +835,20 @@ int main(void)
         entityOrbs[eo].vel = (Vector2){ 0, 0 };
     }
 
+    MatchRecord historyList[MAX_MATCH_RECORDS];
+    int historyCount = 0;
+    int historyScroll = 0;
+    bool currentMatchSaved = false;
+
+    HeroCareerProfile careerProfiles[2];
+    LoadHeroProfiles(careerProfiles);
+
+    char inputHero1Name[24] = "Shoab";
+    char inputHero2Name[24] = "Nayemul";
+    int nameEntryStep = 0; // 0 = Shoab ship, 1 = Nayemul ship
+    int letterCount1 = 5;
+    int letterCount2 = 7;
+
     bool magRailSoundPlayed = false;
     bool laserChargeSoundPlayed = false;
     bool prevHeroesTethered = false;
@@ -836,7 +966,10 @@ int main(void)
     float radarJammedTimer       = 0.0f;
 
     Vector2 jammerBulletPos[MAX_COMMANDER_BULLETS];
+    Vector2 jammerBulletVel[MAX_COMMANDER_BULLETS];
     bool jammerBulletActive[MAX_COMMANDER_BULLETS] = { false };
+    bool jammerBulletLocked[MAX_COMMANDER_BULLETS] = { false };
+
     Vector2 warpBulletPos[MAX_COMMANDER_BULLETS];
     bool warpBulletActive[MAX_COMMANDER_BULLETS] = { false };
 
@@ -1388,42 +1521,188 @@ int main(void)
                          "EARTH ALLIANCE TACTICAL DEFENSE BUS", GOLD);
 
             char menuTitle[] = "SPACE INVADERS";
-            DrawText(menuTitle, (WindowWidth - MeasureText(menuTitle, 46)) / 2, panelY + 40, 46, GOLD);
-            char menuSub[] = "COMMAND CONSOLE & INTERCEPTION SYSTEM";
-            DrawText(menuSub, (WindowWidth - MeasureText(menuSub, 19)) / 2, panelY + 95, 19, RAYWHITE);
-            DrawLine(panelX + 100, panelY + 130, panelX + panelW - 100, panelY + 130, SKYBLUE);
+            DrawText(menuTitle, (WindowWidth - MeasureText(menuTitle, 46)) / 2, panelY + 36, 46, GOLD);
+            char menuSub[] = "SAVE THE EARTH....";
+            DrawText(menuSub, (WindowWidth - MeasureText(menuSub, 19)) / 2, panelY + 86, 19, RAYWHITE);
+            DrawLine(panelX + 100, panelY + 118, panelX + panelW - 100, panelY + 118, SKYBLUE);
 
-            if (IsKeyPressed(KEY_UP)) { PlaySound(menuMove); MenuSelection--; if (MenuSelection < 0) MenuSelection = 5; }
-            if (IsKeyPressed(KEY_DOWN)) { PlaySound(menuMove); MenuSelection++; if (MenuSelection > 5) MenuSelection = 0; }
+            if (IsKeyPressed(KEY_UP)) { PlaySound(menuMove); MenuSelection--; if (MenuSelection < 0) MenuSelection = 7; }
+            if (IsKeyPressed(KEY_DOWN)) { PlaySound(menuMove); MenuSelection++; if (MenuSelection > 7) MenuSelection = 0; }
 
-            char itemNames[6][32] = { "PLAY", "HOW TO PLAY?", "SCORES & STATS", "OPTIONS", "CREDENTIALS", "EXIT" };
-            for (int i = 0; i < 6; i++)
+            char itemNames[8][32] = {
+                "PLAY",
+                "HOW TO PLAY?",
+                "SCORES & STATS",
+                "HERO CAREER DOSSIERS",
+                "PREVIOUS GAMEPLAYS",
+                "OPTIONS",
+                "CREDENTIALS",
+                "EXIT"
+            };
+
+            for (int i = 0; i < 8; i++)
             {
-                int btnW = 560, btnH = 56, btnX = (WindowWidth - btnW) / 2, btnY = panelY + 155 + (i * 82);
+                int btnW = 560, btnH = 48, btnX = (WindowWidth - btnW) / 2, btnY = panelY + 130 + (i * 64);
                 if (MenuSelection == i)
                 {
                     DrawRectangle(btnX, btnY, btnW, btnH, Fade(SKYBLUE, 0.25f));
                     DrawRectangleLines(btnX, btnY, btnW, btnH, LIME);
-                    DrawRectangle(btnX - 18, btnY + 14, 8, 28, YELLOW);
-                    DrawRectangle(btnX + btnW + 10, btnY + 14, 8, 28, YELLOW);
-                    DrawText(itemNames[i], (WindowWidth - MeasureText(itemNames[i], 24)) / 2, btnY + 16, 24, YELLOW);
+                    DrawRectangle(btnX - 18, btnY + 10, 8, 28, YELLOW);
+                    DrawRectangle(btnX + btnW + 10, btnY + 10, 8, 28, YELLOW);
+                    DrawText(itemNames[i], (WindowWidth - MeasureText(itemNames[i], 22)) / 2, btnY + 13, 22, YELLOW);
                 }
                 else
                 {
                     DrawRectangle(btnX, btnY, btnW, btnH, Fade(BLACK, 0.70f));
                     DrawRectangleLines(btnX, btnY, btnW, btnH, DARKGRAY);
-                    DrawText(itemNames[i], (WindowWidth - MeasureText(itemNames[i], 22)) / 2, btnY + 17, 22, LIGHTGRAY);
+                    DrawText(itemNames[i], (WindowWidth - MeasureText(itemNames[i], 20)) / 2, btnY + 14, 20, LIGHTGRAY);
                 }
             }
 
             char footerText[] = "USE [UP / DOWN] TO NAVIGATE   |   [ENTER / SPACE] TO EXECUTE";
-            DrawText(footerText, (WindowWidth - MeasureText(footerText, 18)) / 2, panelY + panelH - 40, 18, GREEN);
+            DrawText(footerText, (WindowWidth - MeasureText(footerText, 18)) / 2, panelY + panelH - 35, 18, GREEN);
 
             if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE))
             {
                 PlaySound(menuSelect);
                 if (MenuSelection == 0)
                 {
+                    CurrentState = STATE_NAME_ENTRY;
+                    nameEntryStep = 0;
+                }
+                else if (MenuSelection == 1) { CurrentState = STATE_HOWTOPLAY; howToPlayTab = 0; }
+                else if (MenuSelection == 2) { CurrentState = STATE_SCORES; }
+                else if (MenuSelection == 3) {
+                    CurrentState = STATE_CAREER;
+                    LoadHeroProfiles(careerProfiles);
+                }
+                else if (MenuSelection == 4) {
+                    CurrentState = STATE_HISTORY;
+                    historyScroll = 0;
+                    historyCount = LoadMatchRecords(historyList, MAX_MATCH_RECORDS);
+                }
+                else if (MenuSelection == 5) { CurrentState = STATE_OPTIONS; }
+                else if (MenuSelection == 6) { CurrentState = STATE_CREDITS; creditsTab = 0; }
+                else if (MenuSelection == 7) break;
+            }
+        }
+        // STATE: PILOT NAME ENTRY (Pre-Flight Registration)
+        else if (CurrentState == STATE_NAME_ENTRY)
+        {
+            UpdateMusicStream(bgmMenu);
+            int panelW = 1200, panelH = 620;
+            int panelX = (WindowWidth - panelW) / 2, panelY = (WindowHeight - panelH) / 2;
+
+            DrawCyberBox((Rectangle){ (float)panelX, (float)panelY, (float)panelW, (float)panelH },
+                         SKYBLUE, Fade((Color){ 10, 16, 32, 255 }, 0.94f),
+                         "DEFENSE COMMAND // PILOT IDENTITY REGISTRATION", GOLD);
+
+            char regTitle[] = "PILOT FLIGHT ROSTER REGISTRATION";
+            DrawText(regTitle, (WindowWidth - MeasureText(regTitle, 36)) / 2, panelY + 40, 36, GOLD);
+            char regSub[] = "ENTER CUSTOM CALLSIGNS FOR INTERCEPTOR CREW BEFORE LAUNCH";
+            DrawText(regSub, (WindowWidth - MeasureText(regSub, 18)) / 2, panelY + 85, 18, RAYWHITE);
+            DrawLine(panelX + 80, panelY + 115, panelX + panelW - 80, panelY + 115, SKYBLUE);
+
+            // Input handling for names
+            int key = GetCharPressed();
+            while (key > 0)
+            {
+                if ((key >= 32) && (key <= 125))
+                {
+                    if (nameEntryStep == 0 && letterCount1 < 18) {
+                        inputHero1Name[letterCount1] = (char)key;
+                        inputHero1Name[letterCount1 + 1] = '\0';
+                        letterCount1++;
+                    }
+                    else if (nameEntryStep == 1 && letterCount2 < 18) {
+                        inputHero2Name[letterCount2] = (char)key;
+                        inputHero2Name[letterCount2 + 1] = '\0';
+                        letterCount2++;
+                    }
+                }
+                key = GetCharPressed();
+            }
+
+            if (IsKeyPressed(KEY_BACKSPACE))
+            {
+                if (nameEntryStep == 0 && letterCount1 > 0) {
+                    letterCount1--;
+                    inputHero1Name[letterCount1] = '\0';
+                }
+                else if (nameEntryStep == 1 && letterCount2 > 0) {
+                    letterCount2--;
+                    inputHero2Name[letterCount2] = '\0';
+                }
+            }
+
+            // Cards for Ship 1 and Ship 2
+            int boxW = 500, boxH = 260, boxY = panelY + 150;
+            int box1X = panelX + 70;
+            int box2X = panelX + panelW - boxW - 70;
+
+            // Box 1: Shoab's Ship
+            bool active1 = (nameEntryStep == 0);
+            DrawRectangle(box1X, boxY, boxW, boxH, Fade(BLACK, 0.75f));
+            DrawRectangleLinesEx((Rectangle){ (float)box1X, (float)boxY, (float)boxW, (float)boxH }, active1 ? 3.0f : 1.5f, active1 ? LIME : DARKGRAY);
+            DrawText("SPACESHIP 1: SHOAB'S INTERCEPTOR", box1X + 25, boxY + 22, 20, LIME);
+            DrawText("Class: Aegis-1 Plasma Heavy Fighter", box1X + 25, boxY + 50, 15, LIGHTGRAY);
+
+            int inputBarW = boxW - 50, inputBarH = 55;
+            int ib1X = box1X + 25, ib1Y = boxY + 95;
+            DrawRectangle(ib1X, ib1Y, inputBarW, inputBarH, Fade(DARKBLUE, 0.40f));
+            DrawRectangleLines(ib1X, ib1Y, inputBarW, inputBarH, active1 ? YELLOW : GRAY);
+
+            // Render beautifully with drop-shadow
+            DrawText(inputHero1Name, ib1X + 18, ib1Y + 16, 26, Fade(BLACK, 0.85f));
+            DrawText(inputHero1Name, ib1X + 16, ib1Y + 14, 26, active1 ? LIME : RAYWHITE);
+
+            if (active1 && ((int)(GetTime() * 2.5f) % 2 == 0))
+            {
+                int cursorX = ib1X + 18 + MeasureText(inputHero1Name, 26);
+                DrawRectangle(cursorX, ib1Y + 12, 3, 30, YELLOW);
+            }
+            DrawText("Status: [ READY FOR PILOT NAME ]", box1X + 25, boxY + 180, 16, active1 ? YELLOW : GRAY);
+
+            // Box 2: Nayemul's Ship
+            bool active2 = (nameEntryStep == 1);
+            DrawRectangle(box2X, boxY, boxW, boxH, Fade(BLACK, 0.75f));
+            DrawRectangleLinesEx((Rectangle){ (float)box2X, (float)boxY, (float)boxW, (float)boxH }, active2 ? 3.0f : 1.5f, active2 ? YELLOW : DARKGRAY);
+            DrawText("SPACESHIP 2: NAYEMUL'S INTERCEPTOR", box2X + 25, boxY + 22, 20, YELLOW);
+            DrawText("Class: Shadow-2 Stealth Interceptor", box2X + 25, boxY + 50, 15, LIGHTGRAY);
+
+            int ib2X = box2X + 25, ib2Y = boxY + 95;
+            DrawRectangle(ib2X, ib2Y, inputBarW, inputBarH, Fade(DARKBLUE, 0.40f));
+            DrawRectangleLines(ib2X, ib2Y, inputBarW, inputBarH, active2 ? YELLOW : GRAY);
+
+            DrawText(inputHero2Name, ib2X + 18, ib2Y + 16, 26, Fade(BLACK, 0.85f));
+            DrawText(inputHero2Name, ib2X + 16, ib2Y + 14, 26, active2 ? YELLOW : RAYWHITE);
+
+            if (active2 && ((int)(GetTime() * 2.5f) % 2 == 0))
+            {
+                int cursorX = ib2X + 18 + MeasureText(inputHero2Name, 26);
+                DrawRectangle(cursorX, ib2Y + 12, 3, 30, YELLOW);
+            }
+            DrawText("Status: [ PENDING REGISTRATION ]", box2X + 25, boxY + 180, 16, active2 ? YELLOW : GRAY);
+
+            const char* promptEntry = (nameEntryStep == 0) ?
+                "TYPE NAME FOR SHOAB'S SPACESHIP AND PRESS [ENTER]" :
+                "TYPE NAME FOR NAYEMUL'S SPACESHIP AND PRESS [ENTER] TO LAUNCH";
+            DrawText(promptEntry, (WindowWidth - MeasureText(promptEntry, 20)) / 2, panelY + panelH - 85, 20, GOLD);
+
+            char entryFooter[] = "PRESS [ENTER] TO CONFIRM   |   [BACKSPACE] TO DELETE   |   [M] RETURN TO MENU";
+            DrawText(entryFooter, (WindowWidth - MeasureText(entryFooter, 17)) / 2, panelY + panelH - 40, 17, GREEN);
+
+            if (IsKeyPressed(KEY_ENTER))
+            {
+                PlaySound(menuSelect);
+                if (nameEntryStep == 0)
+                {
+                    if (strlen(inputHero1Name) == 0) { strcpy(inputHero1Name, "Shoab"); letterCount1 = 5; }
+                    nameEntryStep = 1;
+                }
+                else
+                {
+                    if (strlen(inputHero2Name) == 0) { strcpy(inputHero2Name, "Nayemul"); letterCount2 = 7; }
                     StopMusicStream(bgmMenu);
                     CurrentState = STATE_LAUNCH;
                     launchDialogueIndex = 0; launchCountdownTimer = 3.0f; launchCountdownActive = false;
@@ -1431,11 +1710,122 @@ int main(void)
                     launchShip2Pos = (Vector2){ WindowWidth * 0.60f, WindowHeight - 240 };
                     PlayMusicStream(bgmStory);
                 }
-                else if (MenuSelection == 1) { CurrentState = STATE_HOWTOPLAY; howToPlayTab = 0; }
-                else if (MenuSelection == 2) { CurrentState = STATE_SCORES; }
-                else if (MenuSelection == 3) { CurrentState = STATE_OPTIONS; }
-                else if (MenuSelection == 4) { CurrentState = STATE_CREDITS; creditsTab = 0; }
-                else if (MenuSelection == 5) break;
+            }
+
+            if (IsKeyPressed(KEY_M))
+            {
+                PlaySound(menuSelect);
+                CurrentState = STATE_MENU;
+            }
+        }
+        // STATE: HERO CAREER DOSSIERS (Permanent Lifetime Career Records)
+        else if (CurrentState == STATE_CAREER)
+        {
+            UpdateMusicStream(bgmMenu);
+            int panelW = 1320, panelH = 760;
+            int panelX = (WindowWidth - panelW) / 2, panelY = (WindowHeight - panelH) / 2;
+
+            DrawCyberBox((Rectangle){ (float)panelX, (float)panelY, (float)panelW, (float)panelH },
+                         SKYBLUE, Fade((Color){ 10, 15, 30, 255 }, 0.94f),
+                         "HERO CAREER DOSSIERS // LIFETIME FLIGHT LOGS", GOLD);
+
+            char carTitle[] = "PERMANENT HERO CAREER RECORDS";
+            DrawText(carTitle, (WindowWidth - MeasureText(carTitle, 36)) / 2, panelY + 36, 36, GOLD);
+            char carSub[] = "CUMULATIVE COMBAT TELEMETRY ACROSS ALL RECORDED SESSIONS";
+            DrawText(carSub, (WindowWidth - MeasureText(carSub, 17)) / 2, panelY + 80, 17, RAYWHITE);
+            DrawLine(panelX + 60, panelY + 110, panelX + panelW - 60, panelY + 110, SKYBLUE);
+
+            int cardW = 560, cardH = 540, cardY = panelY + 130;
+            int card1X = panelX + 60;
+            int card2X = panelX + panelW - cardW - 60;
+
+            // Profile 1: Shoab (Aegis-1)
+            DrawRectangle(card1X, cardY, cardW, cardH, Fade(BLACK, 0.75f));
+            DrawRectangleLines(card1X, cardY, cardW, cardH, LIME);
+            DrawText("SPACESHIP: SHOAB'S INTERCEPTOR", card1X + 30, cardY + 24, 22, LIME);
+            DrawText("Callsign: AEGIS-1  |  Class: Interceptor Alpha", card1X + 30, cardY + 54, 15, LIGHTGRAY);
+            DrawLine(card1X + 25, cardY + 80, card1X + cardW - 25, cardY + 80, DARKGRAY);
+
+            int statY = cardY + 105;
+            int col1 = card1X + 35, colVal1 = card1X + cardW - 60;
+            DrawText("TOTAL MISSIONS SORTIED:", col1, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d MISSIONS", careerProfiles[0].totalMissions), colVal1 - MeasureText(TextFormat("%d MISSIONS", careerProfiles[0].totalMissions), 18), statY, 18, WHITE);
+
+            statY += 40;
+            DrawText("PLANETARY VICTORIES:", col1, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d VICTORIES", careerProfiles[0].totalVictories), colVal1 - MeasureText(TextFormat("%d VICTORIES", careerProfiles[0].totalVictories), 18), statY, 18, GREEN);
+
+            statY += 40;
+            DrawText("CASUALTIES / DEFEATS:", col1, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d DEFEATS", careerProfiles[0].totalDefeats), colVal1 - MeasureText(TextFormat("%d DEFEATS", careerProfiles[0].totalDefeats), 18), statY, 18, (careerProfiles[0].totalDefeats > 0) ? RED : GRAY);
+
+            statY += 40;
+            DrawText("LIFETIME COMBAT SCORE:", col1, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%07ld PTS", careerProfiles[0].totalScore), colVal1 - MeasureText(TextFormat("%07ld PTS", careerProfiles[0].totalScore), 18), statY, 18, LIME);
+
+            statY += 40;
+            DrawText("LIFETIME ALIEN KILLS:", col1, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d KILLS", careerProfiles[0].totalAlienKills), colVal1 - MeasureText(TextFormat("%d KILLS", careerProfiles[0].totalAlienKills), 18), statY, 18, YELLOW);
+
+            statY += 40;
+            DrawText("MINIONS ELIMINATED:", col1, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d MINIONS", careerProfiles[0].totalMinionKills), colVal1 - MeasureText(TextFormat("%d MINIONS", careerProfiles[0].totalMinionKills), 18), statY, 18, WHITE);
+
+            statY += 40;
+            DrawText("DREADNOUGHT DAMAGE DEALT:", col1, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d HP", careerProfiles[0].totalBossDamage), colVal1 - MeasureText(TextFormat("%d HP", careerProfiles[0].totalBossDamage), 18), statY, 18, ORANGE);
+
+            statY += 40;
+            DrawText("TOTAL DAMAGE SUSTAINED:", col1, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d HITS", careerProfiles[0].totalHitsTaken), colVal1 - MeasureText(TextFormat("%d HITS", careerProfiles[0].totalHitsTaken), 18), statY, 18, SKYBLUE);
+
+            // Profile 2: Nayemul (Shadow-2)
+            DrawRectangle(card2X, cardY, cardW, cardH, Fade(BLACK, 0.75f));
+            DrawRectangleLines(card2X, cardY, cardW, cardH, YELLOW);
+            DrawText("SPACESHIP: NAYEMUL'S INTERCEPTOR", card2X + 30, cardY + 24, 22, YELLOW);
+            DrawText("Callsign: SHADOW-2  |  Class: Stealth Fighter Beta", card2X + 30, cardY + 54, 15, LIGHTGRAY);
+            DrawLine(card2X + 25, cardY + 80, card2X + cardW - 25, cardY + 80, DARKGRAY);
+
+            statY = cardY + 105;
+            int col2 = card2X + 35, colVal2 = card2X + cardW - 60;
+            DrawText("TOTAL MISSIONS SORTIED:", col2, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d MISSIONS", careerProfiles[1].totalMissions), colVal2 - MeasureText(TextFormat("%d MISSIONS", careerProfiles[1].totalMissions), 18), statY, 18, WHITE);
+
+            statY += 40;
+            DrawText("PLANETARY VICTORIES:", col2, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d VICTORIES", careerProfiles[1].totalVictories), colVal2 - MeasureText(TextFormat("%d VICTORIES", careerProfiles[1].totalVictories), 18), statY, 18, GREEN);
+
+            statY += 40;
+            DrawText("CASUALTIES / DEFEATS:", col2, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d DEFEATS", careerProfiles[1].totalDefeats), colVal2 - MeasureText(TextFormat("%d DEFEATS", careerProfiles[1].totalDefeats), 18), statY, 18, (careerProfiles[1].totalDefeats > 0) ? RED : GRAY);
+
+            statY += 40;
+            DrawText("LIFETIME COMBAT SCORE:", col2, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%07ld PTS", careerProfiles[1].totalScore), colVal2 - MeasureText(TextFormat("%07ld PTS", careerProfiles[1].totalScore), 18), statY, 18, YELLOW);
+
+            statY += 40;
+            DrawText("LIFETIME ALIEN KILLS:", col2, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d KILLS", careerProfiles[1].totalAlienKills), colVal2 - MeasureText(TextFormat("%d KILLS", careerProfiles[1].totalAlienKills), 18), statY, 18, LIME);
+
+            statY += 40;
+            DrawText("MINIONS ELIMINATED:", col2, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d MINIONS", careerProfiles[1].totalMinionKills), colVal2 - MeasureText(TextFormat("%d MINIONS", careerProfiles[1].totalMinionKills), 18), statY, 18, WHITE);
+
+            statY += 40;
+            DrawText("DREADNOUGHT DAMAGE DEALT:", col2, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d HP", careerProfiles[1].totalBossDamage), colVal2 - MeasureText(TextFormat("%d HP", careerProfiles[1].totalBossDamage), 18), statY, 18, ORANGE);
+
+            statY += 40;
+            DrawText("TOTAL DAMAGE SUSTAINED:", col2, statY, 18, RAYWHITE);
+            DrawText(TextFormat("%d HITS", careerProfiles[1].totalHitsTaken), colVal2 - MeasureText(TextFormat("%d HITS", careerProfiles[1].totalHitsTaken), 18), statY, 18, SKYBLUE);
+
+            char carFooter[] = "ALL STATS PERMANENTLY STORED TO DISK   |   [BACKSPACE / M] RETURN TO MENU";
+            DrawText(carFooter, (WindowWidth - MeasureText(carFooter, 18)) / 2, panelY + panelH - 35, 18, GREEN);
+
+            if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressed(KEY_M))
+            {
+                PlaySound(menuSelect);
+                CurrentState = STATE_MENU;
             }
         }
         // STATE: HOW TO PLAY??? (provided all the rules and technique of the game...)
@@ -1677,6 +2067,117 @@ int main(void)
 
             char scrBack[] = "PRESS [BACKSPACE] OR [M] TO RETURN TO MENU";
             DrawText(scrBack, (WindowWidth - MeasureText(scrBack, 18)) / 2, panelY + panelH - 35, 18, GREEN);
+
+            if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressed(KEY_M))
+            {
+                PlaySound(menuSelect);
+                CurrentState = STATE_MENU;
+            }
+        }
+        // STATE: PREVIOUS GAMEPLAYS (PERMANENT MATCH REPOSITORY)
+        else if (CurrentState == STATE_HISTORY)
+        {
+            UpdateMusicStream(bgmMenu);
+            int panelW = 1320, panelH = 760;
+            int panelX = (WindowWidth - panelW) / 2, panelY = (WindowHeight - panelH) / 2;
+
+            DrawCyberBox((Rectangle){ (float)panelX, (float)panelY, (float)panelW, (float)panelH },
+                         SKYBLUE, Fade((Color){ 10, 15, 30, 255 }, 0.92f),
+                         "PERMANENT FLIGHT LOGS // HISTORICAL BATTLE ARCHIVE", GOLD);
+
+            char histTitle[] = "PREVIOUS GAMEPLAYS & BATTLE TELEMETRY";
+            DrawText(histTitle, (WindowWidth - MeasureText(histTitle, 36)) / 2, panelY + 36, 36, GOLD);
+            char histSub[] = "RECENT MATCHES AT TOP  |  USE [UP / DOWN ARROWS] TO SCROLL ARCHIVE";
+            DrawText(histSub, (WindowWidth - MeasureText(histSub, 17)) / 2, panelY + 82, 17, RAYWHITE);
+            DrawLine(panelX + 60, panelY + 110, panelX + panelW - 60, panelY + 110, SKYBLUE);
+
+            int visibleSlots = 4;
+            int maxScroll = (historyCount > visibleSlots) ? (historyCount - visibleSlots) : 0;
+
+            if (IsKeyPressed(KEY_UP))   { PlaySound(menuMove); historyScroll--; if (historyScroll < 0) historyScroll = 0; }
+            if (IsKeyPressed(KEY_DOWN)) { PlaySound(menuMove); historyScroll++; if (historyScroll > maxScroll) historyScroll = maxScroll; }
+
+            if (historyCount == 0)
+            {
+                const char* noData = "NO RECORDED COMBAT MISSIONS FOUND IN PERMANENT STORAGE.";
+                DrawText(noData, (WindowWidth - MeasureText(noData, 22)) / 2, panelY + 320, 22, GRAY);
+            }
+            else
+            {
+                int cardW = panelW - 120;
+                int cardH = 125;
+                int cardX = panelX + 60;
+                int startY = panelY + 125;
+
+                for (int v = 0; v < visibleSlots; v++)
+                {
+                    int recIdx = historyScroll + v;
+                    if (recIdx >= historyCount) break;
+
+                    MatchRecord r = historyList[recIdx];
+                    int cardY = startY + (v * (cardH + 16));
+
+                    DrawRectangle(cardX, cardY, cardW, cardH, Fade(BLACK, 0.75f));
+                    DrawRectangleLines(cardX, cardY, cardW, cardH, r.isVictory ? LIME : RED);
+
+                    // Entry Index & Status
+                    const char* tag = (recIdx == 0) ? TextFormat("MISSION #%d [LATEST]", historyCount - recIdx) : TextFormat("MISSION #%d", historyCount - recIdx);
+                    DrawText(tag, cardX + 20, cardY + 14, 18, YELLOW);
+
+                    if (r.isVictory)
+                    {
+                        DrawText("[ VICTORY - EARTH SAVED ]", cardX + 240, cardY + 14, 18, LIME);
+                        int mins = (int)r.runTime / 60;
+                        int secs = (int)r.runTime % 60;
+                        DrawText(TextFormat("TIME TO WIN: %02d:%02d", mins, secs), cardX + cardW - 240, cardY + 14, 18, GOLD);
+                    }
+                    else
+                    {
+                        DrawText("[ DEFEAT - EARTH OVERRUN ]", cardX + 240, cardY + 14, 18, RED);
+                    }
+
+                    DrawLine(cardX + 15, cardY + 38, cardX + cardW - 15, cardY + 38, DARKGRAY);
+
+                    int col1 = cardX + 24;
+                    int col2 = cardX + 430;
+                    int col3 = cardX + 850;
+                    int row1Y = cardY + 48;
+                    int row2Y = cardY + 74;
+                    int row3Y = cardY + 98;
+
+                    // Most Aliens Killed (Top Gun)
+                    if (r.hero1Kills > r.hero2Kills)      DrawText(TextFormat("MOST KILLS: %s (%d)", r.hero1PilotName, r.hero1Kills), col1, row1Y, 16, LIME);
+                    else if (r.hero2Kills > r.hero1Kills) DrawText(TextFormat("MOST KILLS: %s (%d)", r.hero2PilotName, r.hero2Kills), col1, row1Y, 16, YELLOW);
+                    else                                  DrawText(TextFormat("MOST KILLS: TIED (%d)", r.hero1Kills), col1, row1Y, 16, WHITE);
+
+                    // Dreadnought Breaker (Most Boss Damage)
+                    if (r.hero1BossDamage > r.hero2BossDamage)      DrawText(TextFormat("DREADNOUGHT BREAKER: %s (%d HP)", r.hero1PilotName, r.hero1BossDamage), col2, row1Y, 16, LIME);
+                    else if (r.hero2BossDamage > r.hero1BossDamage) DrawText(TextFormat("DREADNOUGHT BREAKER: %s (%d HP)", r.hero2PilotName, r.hero2BossDamage), col2, row1Y, 16, YELLOW);
+                    else                                            DrawText(TextFormat("DREADNOUGHT BREAKER: TIED (%d HP)", r.hero1BossDamage), col2, row1Y, 16, WHITE);
+
+                    // Fewest Hits Taken (Untouchable Ace)
+                    if (r.hero1HitsTaken < r.hero2HitsTaken)      DrawText(TextFormat("FEWEST HITS: %s (%d)", r.hero1PilotName, r.hero1HitsTaken), col3, row1Y, 16, LIME);
+                    else if (r.hero2HitsTaken < r.hero1HitsTaken) DrawText(TextFormat("FEWEST HITS: %s (%d)", r.hero2PilotName, r.hero2HitsTaken), col3, row1Y, 16, YELLOW);
+                    else                                          DrawText(TextFormat("FEWEST HITS: TIED (%d)", r.hero1HitsTaken), col3, row1Y, 16, WHITE);
+
+                    // Row 2: Final Scores
+                    DrawText(TextFormat("Shoab Score: %05d", r.hero1Score), col1, row2Y, 15, RAYWHITE);
+                    DrawText(TextFormat("Nayemul Score: %05d", r.hero2Score), col2, row2Y, 15, RAYWHITE);
+
+                    // Row 3: Custom Pilot Names Underneath Ship Titles
+                    DrawText(TextFormat("Shoab's Spaceship [Pilot: %s]", r.hero1PilotName), col1, row3Y, 15, LIME);
+                    DrawText(TextFormat("Nayemul's Spaceship [Pilot: %s]", r.hero2PilotName), col2, row3Y, 15, YELLOW);
+                }
+
+                // Scroll Bar Indicator
+                if (maxScroll > 0)
+                {
+                    DrawText(TextFormat("SCROLL: %d / %d", historyScroll + 1, maxScroll + 1), panelX + panelW - 190, panelY + panelH - 42, 16, SKYBLUE);
+                }
+            }
+
+            char histFooter[] = "USE [UP / DOWN ARROWS] TO SCROLL LOGS   |   [BACKSPACE / M] RETURN TO MENU";
+            DrawText(histFooter, (WindowWidth - MeasureText(histFooter, 18)) / 2, panelY + panelH - 38, 18, GREEN);
 
             if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressed(KEY_M))
             {
@@ -2081,6 +2582,7 @@ int main(void)
                 StopSound(sndMagRailCharge);
                 StopSound(sndLaserCharge);
                 StopSound(sndBossWarpIn);
+                StopSound(sndAlienStep);
                 StopSound(sndDryFire);
                 StopSound(sndTetherConnect);
                 StopSound(sndAirdropIncoming);
@@ -2991,7 +3493,7 @@ int main(void)
                     commanderIntroActive = false; gameTimeDilation = 1.0f;
                     jammerPos = (Vector2){ WindowWidth * 0.25f - COMMANDER_SIZE / 2.0f, 130.0f };
                     jammerSpeed = (Vector2){ 120.0f, 0.0f }; jammerHp = jammerMaxHp; jammerActive = true;
-                    jammerShootTimer = 1.5f; jammerActionCooldown = 5.0f; jammerPowerTimer = 0.0f; jammerAnimState = 0;
+                    jammerShootTimer = 3.0f; jammerActionCooldown = 5.0f; jammerPowerTimer = 0.0f; jammerAnimState = 0;
 
                     warpPos = (Vector2){ WindowWidth * 0.75f - COMMANDER_SIZE / 2.0f, 130.0f };
                     warpSpeed = (Vector2){ 140.0f, 0.0f }; warpHp = warpMaxHp; warpActive = true;
@@ -3000,7 +3502,7 @@ int main(void)
                 }
             }
 
-            // COMMANDER 1: jammer (Frozen and silenced when heroes die or game is won)
+            // COMMANDER 1: jammer (Shoots every 3.0s, smart tracks hero until 1/4th height)
             if (jammerActive && !isFrozen && !deathSequenceActive && !GameOver && !bossDefeated)
             {
                 jammerPos.x += jammerSpeed.x * Time;
@@ -3010,14 +3512,24 @@ int main(void)
                 jammerShootTimer -= Time;
                 if (jammerShootTimer <= 0.0f)
                 {
-                    jammerShootTimer = 1.8f;
+                    jammerShootTimer = 3.0f; // Exactly every 3 seconds!
                     for (int b = 0; b < MAX_COMMANDER_BULLETS; b++)
                     {
                         if (!jammerBulletActive[b])
                         {
                             jammerBulletActive[b] = true;
+                            jammerBulletLocked[b] = false;
                             jammerBulletPos[b] = (Vector2){ jammerPos.x + COMMANDER_SIZE / 2.0f, jammerPos.y + COMMANDER_SIZE };
-                            PlaySound(sndJammerShot); break;
+
+                            // Determine target hero for initial tracking trajectory
+                            Vector2 targetHeroPos = (Hero1Lives > 0 && (GetRandomValue(0, 1) == 0 || Hero2Lives <= 0)) ? Hero1Pos : Hero2Pos;
+                            Vector2 shootDir = Vector2Normalize(Vector2Subtract(targetHeroPos, jammerBulletPos[b]));
+                            if (shootDir.y < 0.2f) shootDir.y = 0.2f; // Ensure downward propulsion
+                            shootDir = Vector2Normalize(shootDir);
+                            jammerBulletVel[b] = Vector2Scale(shootDir, 420.0f);
+
+                            PlaySound(sndJammerShot); 
+                            break;
                         }
                     }
                 }
@@ -3081,13 +3593,34 @@ int main(void)
                 else warpAnimState = (fabsf(warpSpeed.x) > 0.0f) ? 2 : 0;
             }
 
-            // commander laser beam and priority check,bugs fix...
+            // commander laser beam and priority check (Jammer tracking until 1/4th height: Y = 225px)
             for (int b = 0; b < MAX_COMMANDER_BULLETS; b++)
             {
                 if (jammerBulletActive[b] && !isFrozen && !deathSequenceActive && !GameOver && !bossDefeated)
                 {
-                    jammerBulletPos[b].y += 420.0f * Time;
-                    if (jammerBulletPos[b].y > WindowHeight) jammerBulletActive[b] = false;
+                    float trackingThresholdY = WindowHeight * 0.25f; // 225px
+
+                    if (jammerBulletPos[b].y < trackingThresholdY && !jammerBulletLocked[b])
+                    {
+                        // Actively steering and tracking toward one of the living heroes
+                        Vector2 targetHero = (Hero1Lives > 0 && (b % 2 == 0 || Hero2Lives <= 0)) ? Hero1Pos : Hero2Pos;
+                        Vector2 desiredDir = Vector2Normalize(Vector2Subtract(targetHero, jammerBulletPos[b]));
+                        if (desiredDir.y < 0.25f) desiredDir.y = 0.25f;
+                        desiredDir = Vector2Normalize(desiredDir);
+                        jammerBulletVel[b] = Vector2Scale(desiredDir, 420.0f);
+                    }
+                    else
+                    {
+                        // Crosses 1/4th height: locked straight on its existing trajectory!
+                        jammerBulletLocked[b] = true;
+                    }
+
+                    jammerBulletPos[b] = Vector2Add(jammerBulletPos[b], Vector2Scale(jammerBulletVel[b], Time));
+
+                    if (jammerBulletPos[b].y > WindowHeight || jammerBulletPos[b].x < -30 || jammerBulletPos[b].x > WindowWidth + 30)
+                    {
+                        jammerBulletActive[b] = false;
+                    }
                     else if (!teamShieldActive && !evacActive)
                     {
                         Rectangle jbRec = { jammerBulletPos[b].x - 4, jammerBulletPos[b].y, 8, 22 };
@@ -3239,7 +3772,7 @@ int main(void)
             }
             else { if (hero2ReviveTimer > 0.0f) StopSound(sndDefibHum); hero2ReviveTimer = 0.0f; }
 
-            // GAME LOST SCREEN (ALL MOVEMENT and  AUDIO stopped EXCEPT BGM)-bug fixed...
+            // GAME LOST SCREEN (ALL MOVEMENT and AUDIO stopped EXCEPT BGM)-bug fixed...
             if (GameOver)
             {
                 bossLaserActive = false; screenCamera.offset = (Vector2){ 0, 0 };
@@ -3267,7 +3800,7 @@ int main(void)
                     int textY = panelY + 115;
                     DrawText("Alien Dreadnought Overlord (Exospheric Invasion Flagship):", panelX + 50, textY, 26, MAROON);
                     DrawText("\"HA HA HA! Look at your interceptors burning in the void!\"", panelX + 50, textY + 60, 24, RED);
-                    DrawText("\"Your greatest pilots - Nayemul and Shoab - have been completely crushed!\"", panelX + 50, textY + 110, 23, RED);
+                    DrawText(TextFormat("\"Your greatest pilots - %s and %s - have been completely crushed!\"", inputHero2Name, inputHero1Name), panelX + 50, textY + 110, 23, RED);
                     DrawText("\"Your frontline defenses are eradicated. Earth is completely defenseless!\"", panelX + 50, textY + 160, 23, ORANGE);
                     DrawText("\"Bow down and surrender now. Your entire world belongs to us!\"", panelX + 50, textY + 210, 24, RED);
                 }
@@ -3280,7 +3813,7 @@ int main(void)
                     int textY = panelY + 125;
                     DrawText("GLOBAL RADAR TELEMETRY CONFIRMS ALL ORBITAL DEFENSES OFFLINE.", panelX + 45, textY, 22, RED);
                     DrawText("Alien armada forces are currently descending upon major metropolitan centers.", panelX + 45, textY + 45, 22, RAYWHITE);
-                    DrawText("Intercept command confirms: Shoab and Nayemul have fallen in battle.", panelX + 45, textY + 90, 22, LIGHTGRAY);
+                    DrawText(TextFormat("Intercept command confirms: %s and %s have fallen in battle.", inputHero1Name, inputHero2Name), panelX + 45, textY + 90, 22, LIGHTGRAY);
                     DrawText("All remaining citizens are advised to seek subterranean shelter immediately.", panelX + 45, textY + 135, 21, LIGHTGRAY);
                     DrawText("May humanity find hope in this darkest hour...", panelX + 45, textY + 180, 23, YELLOW);
                 }
@@ -3298,8 +3831,8 @@ int main(void)
                     int secs = (int)runPlayTime % 60;
                     DrawText(TextFormat("COMBAT ENGAGEMENT TIME: %02d:%02d", mins, secs), (WindowWidth - MeasureText(TextFormat("COMBAT ENGAGEMENT TIME: %02d:%02d", mins, secs), 20)) / 2, panelY + 95, 20, LIGHTGRAY);
 
-                    DrawText(TextFormat("Shoab's Final Score: %05d", Hero1Score), panelX + 180, panelY + 140, 24, LIME);
-                    DrawText(TextFormat("Nayemul's Final Score: %05d", Hero2Score), panelX + 680, panelY + 140, 24, YELLOW);
+                    DrawText(TextFormat("Shoab's Interceptor [%s]: %05d", inputHero1Name, Hero1Score), panelX + 160, panelY + 140, 22, LIME);
+                    DrawText(TextFormat("Nayemul's Stealth [%s]: %05d", inputHero2Name, Hero2Score), panelX + 680, panelY + 140, 22, YELLOW);
 
                     float bossDmgRatio = (float)(Hero1BossDamage + Hero2BossDamage) / 250.0f;
                     Texture2D lossBadge = (bossDmgRatio >= 0.45f) ? texRankBadgeB : texRankBadgeC;
@@ -3316,10 +3849,52 @@ int main(void)
 
                 if (lostDialogueIndex < 2)
                 {
-                    char promptText[] = "PRESS [ENTER] OR [SPACE] TO ADVANCE TRANSMISSION";
+                    char promptText[] = "PRESS [ENTER] OR [SPACE] TO ADVANCE TRANSMISSION & SAVE LOGS";
                     if (((int)(GetTime() * 3)) % 2 == 0)
                         DrawText(promptText, (WindowWidth - MeasureText(promptText, 18)) / 2, panelY + panelH - 45, 18, RED);
-                    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) { PlaySound(menuSelect); lostDialogueIndex++; }
+                    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE))
+                    {
+                        PlaySound(menuSelect);
+                        lostDialogueIndex++;
+                        if (lostDialogueIndex == 2 && !currentMatchSaved)
+                        {
+                            MatchRecord rec = {
+                                .isVictory = false,
+                                .runTime = 0.0f,
+                                .hero1Score = Hero1Score,
+                                .hero2Score = Hero2Score,
+                                .hero1Kills = Hero1Kills,
+                                .hero2Kills = Hero2Kills,
+                                .hero1BossDamage = Hero1BossDamage,
+                                .hero2BossDamage = Hero2BossDamage,
+                                .hero1HitsTaken = Hero1HitsTaken,
+                                .hero2HitsTaken = Hero2HitsTaken
+                            };
+                            strncpy(rec.hero1PilotName, inputHero1Name, sizeof(rec.hero1PilotName) - 1);
+                            strncpy(rec.hero2PilotName, inputHero2Name, sizeof(rec.hero2PilotName) - 1);
+                            SaveMatchRecord(rec);
+
+                            // Update Permanent Career Profiles
+                            careerProfiles[0].totalMissions++;
+                            careerProfiles[0].totalDefeats++;
+                            careerProfiles[0].totalScore += Hero1Score;
+                            careerProfiles[0].totalAlienKills += Hero1Kills;
+                            careerProfiles[0].totalMinionKills += Hero1MinionKills;
+                            careerProfiles[0].totalBossDamage += Hero1BossDamage;
+                            careerProfiles[0].totalHitsTaken += Hero1HitsTaken;
+
+                            careerProfiles[1].totalMissions++;
+                            careerProfiles[1].totalDefeats++;
+                            careerProfiles[1].totalScore += Hero2Score;
+                            careerProfiles[1].totalAlienKills += Hero2Kills;
+                            careerProfiles[1].totalMinionKills += Hero2MinionKills;
+                            careerProfiles[1].totalBossDamage += Hero2BossDamage;
+                            careerProfiles[1].totalHitsTaken += Hero2HitsTaken;
+
+                            SaveHeroProfiles(careerProfiles);
+                            currentMatchSaved = true;
+                        }
+                    }
                 }
 
                 if (IsKeyPressed(KEY_R))
@@ -3361,6 +3936,8 @@ int main(void)
                     StopSound(sndEntityDrone);
                     for (int eo = 0; eo < MAX_ENTITY_ORBS; eo++) entityOrbs[eo].active = false;
 
+                    currentMatchSaved = false;
+
                     for (int a = 0; a < MAX_ASTEROIDS; a++) asteroids[a].active = false;
                     for (int d = 0; d < MAX_ASTEROID_DEBRIS; d++) debrisPool[d].active = false;
                     for (int s = 0; s < MAX_SMOKE_PARTICLES; s++) smokePool[s].active = false;
@@ -3372,7 +3949,7 @@ int main(void)
                     commandersTriggered = false; commanderIntroActive = false; commanderIntroTimer = 0.0f; gameTimeDilation = 1.0f;
                     jammerActive = false; warpActive = false; jammerHp = 0; warpHp = 0; radarJammedTimer = 0.0f;
                     jammerPowerTimer = 0.0f; warpPowerTimer = 0.0f; bossEnraged = false;
-                    for (int b = 0; b < MAX_COMMANDER_BULLETS; b++) { jammerBulletActive[b] = false; warpBulletActive[b] = false; }
+                    for (int b = 0; b < MAX_COMMANDER_BULLETS; b++) { jammerBulletActive[b] = false; warpBulletActive[b] = false; jammerBulletLocked[b] = false; }
                     minionDeployTimer = 0.0f;
                     for (int m = 0; m < MAX_MINIONS; m++) minionActive[m] = false;
                     for (int mb = 0; mb < MAX_MINION_BULLETS; mb++) minionBulletActive[mb] = false;
@@ -3442,8 +4019,8 @@ int main(void)
                                  "EARTH ALLIANCE COCKPIT COMMS // VICTORY CONFIRMED", LIME);
 
                     DrawLine(panelX + 50, panelY + 70, panelX + panelW - 50, panelY + 70, SKYBLUE);
-                    DrawText("Shoab: \"We did it, Nayemul! Look, the dreadnought is breaking apart!\"", panelX + 50, panelY + 110, 24, LIME);
-                    DrawText("Nayemul: \"Target destroyed! Earth is safe! The sky is clear!\"", panelX + 50, panelY + 165, 24, YELLOW);
+                    DrawText(TextFormat("Shoab [%s]: \"We did it, %s! Look, the dreadnought is breaking apart!\"", inputHero1Name, inputHero2Name), panelX + 50, panelY + 110, 22, LIME);
+                    DrawText(TextFormat("Nayemul [%s]: \"Target destroyed! Earth is safe! The sky is clear!\"", inputHero2Name), panelX + 50, panelY + 165, 22, YELLOW);
                     DrawText("Shoab: \"The alien fleet is retreating at full speed!\"", panelX + 50, panelY + 220, 22, LIME);
                     DrawText("Nayemul: \"Engaging thrusters. Let's head home, partner. We won!\"", panelX + 50, panelY + 275, 22, YELLOW);
                 }
@@ -3456,7 +4033,7 @@ int main(void)
                     int textY = panelY + 125;
                     DrawText("MASSIVE GLOBAL CELEBRATIONS HAVE ERUPTED ACROSS ALL CONTINENTS!", panelX + 45, textY, 22, LIME);
                     DrawText("Earth Defense Command confirms all exospheric sectors are completely secure.", panelX + 45, textY + 45, 22, RAYWHITE);
-                    DrawText("Nayemul and Shoab have successfully saved humanity from planetary extinction!", panelX + 45, textY + 90, 22, SKYBLUE);
+                    DrawText(TextFormat("Pilots %s and %s have successfully saved humanity from planetary extinction!", inputHero2Name, inputHero1Name), panelX + 45, textY + 90, 22, SKYBLUE);
                     DrawText("Tonight, fireworks illuminate the skyline across Dhaka and the entire planet!", panelX + 45, textY + 135, 22, YELLOW);
                     DrawText("All orbital defense satellites have resumed normal autonomous operations.", panelX + 45, textY + 180, 21, LIGHTGRAY);
                 }
@@ -3506,8 +4083,8 @@ int main(void)
                                    (Rectangle){ (WindowWidth - bW) / 2.0f, (float)(panelY + 110), (float)bW, (float)bH }, (Vector2){0,0}, 0.0f, WHITE);
                     DrawText(winRankTxt, (WindowWidth - MeasureText(winRankTxt, 21)) / 2, panelY + 198, 21, GOLD);
 
-                    DrawText(TextFormat("Shoab's Score: %05d", Hero1Score), panelX + 160, panelY + 225, 22, LIME);
-                    DrawText(TextFormat("Nayemul's Score: %05d", Hero2Score), panelX + 740, panelY + 225, 22, YELLOW);
+                    DrawText(TextFormat("Shoab's Interceptor [%s]: %05d", inputHero1Name, Hero1Score), panelX + 160, panelY + 225, 20, LIME);
+                    DrawText(TextFormat("Nayemul's Stealth [%s]: %05d", inputHero2Name, Hero2Score), panelX + 740, panelY + 225, 20, YELLOW);
 
                     DrawText("[ COMBAT PERFORMANCE BADGES ]", (WindowWidth - MeasureText("[ COMBAT PERFORMANCE BADGES ]", 19)) / 2, panelY + 255, 19, GOLD);
 
@@ -3517,11 +4094,11 @@ int main(void)
                     DrawText("TOP GUN", card1X + 20, cardY + 15, 20, GOLD);
                     DrawText("Most Alien Kills", card1X + 20, cardY + 42, 15, LIGHTGRAY);
                     if (Hero1Kills > Hero2Kills) {
-                        DrawText(TextFormat("WINNER: SHOAB (%d)", Hero1Kills), card1X + 20, cardY + 75, 19, LIME);
-                        DrawText(TextFormat("Runner Up: Nayemul (%d)", Hero2Kills), card1X + 20, cardY + 102, 14, GRAY);
+                        DrawText(TextFormat("WINNER: %s (%d)", inputHero1Name, Hero1Kills), card1X + 20, cardY + 75, 19, LIME);
+                        DrawText(TextFormat("Runner Up: %s (%d)", inputHero2Name, Hero2Kills), card1X + 20, cardY + 102, 14, GRAY);
                     } else if (Hero2Kills > Hero1Kills) {
-                        DrawText(TextFormat("WINNER: NAYEMUL (%d)", Hero2Kills), card1X + 20, cardY + 75, 19, YELLOW);
-                        DrawText(TextFormat("Runner Up: Shoab (%d)", Hero1Kills), card1X + 20, cardY + 102, 14, GRAY);
+                        DrawText(TextFormat("WINNER: %s (%d)", inputHero2Name, Hero2Kills), card1X + 20, cardY + 75, 19, YELLOW);
+                        DrawText(TextFormat("Runner Up: %s (%d)", inputHero1Name, Hero1Kills), card1X + 20, cardY + 102, 14, GRAY);
                     } else DrawText(TextFormat("TIED: BOTH (%d Kills)", Hero1Kills), card1X + 20, cardY + 85, 19, WHITE);
 
                     int card2X = panelX + 460;
@@ -3530,11 +4107,11 @@ int main(void)
                     DrawText("DREADNOUGHT BREAKER", card2X + 15, cardY + 15, 19, RED);
                     DrawText("Most Boss Damage Dealt", card2X + 20, cardY + 42, 15, LIGHTGRAY);
                     if (Hero1BossDamage > Hero2BossDamage) {
-                        DrawText(TextFormat("WINNER: SHOAB (%d HP)", Hero1BossDamage), card2X + 20, cardY + 75, 19, LIME);
-                        DrawText(TextFormat("Runner Up: Nayemul (%d HP)", Hero2BossDamage), card2X + 20, cardY + 102, 14, GRAY);
+                        DrawText(TextFormat("WINNER: %s (%d HP)", inputHero1Name, Hero1BossDamage), card2X + 20, cardY + 75, 19, LIME);
+                        DrawText(TextFormat("Runner Up: %s (%d HP)", inputHero2Name, Hero2BossDamage), card2X + 20, cardY + 102, 14, GRAY);
                     } else if (Hero2BossDamage > Hero1BossDamage) {
-                        DrawText(TextFormat("WINNER: NAYEMUL (%d HP)", Hero2BossDamage), card2X + 20, cardY + 75, 19, YELLOW);
-                        DrawText(TextFormat("Runner Up: Shoab (%d HP)", Hero1BossDamage), card2X + 20, cardY + 102, 14, GRAY);
+                        DrawText(TextFormat("WINNER: %s (%d HP)", inputHero2Name, Hero2BossDamage), card2X + 20, cardY + 75, 19, YELLOW);
+                        DrawText(TextFormat("Runner Up: %s (%d HP)", inputHero1Name, Hero1BossDamage), card2X + 20, cardY + 102, 14, GRAY);
                     } else DrawText(TextFormat("TIED: BOTH (%d HP)", Hero1BossDamage), card2X + 20, cardY + 85, 19, WHITE);
 
                     int card3X = panelX + 860;
@@ -3543,11 +4120,11 @@ int main(void)
                     DrawText("UNTOUCHABLE ACE", card3X + 20, cardY + 15, 19, GREEN);
                     DrawText("Fewest Damage Hits Taken", card3X + 20, cardY + 42, 15, LIGHTGRAY);
                     if (Hero1HitsTaken < Hero2HitsTaken) {
-                        DrawText(TextFormat("WINNER: SHOAB (%d Hits)", Hero1HitsTaken), card3X + 20, cardY + 75, 19, LIME);
-                        DrawText(TextFormat("Nayemul: %d Hits Taken", Hero2HitsTaken), card3X + 20, cardY + 102, 14, GRAY);
+                        DrawText(TextFormat("WINNER: %s (%d Hits)", inputHero1Name, Hero1HitsTaken), card3X + 20, cardY + 75, 19, LIME);
+                        DrawText(TextFormat("%s: %d Hits Taken", inputHero2Name, Hero2HitsTaken), card3X + 20, cardY + 102, 14, GRAY);
                     } else if (Hero2HitsTaken < Hero1HitsTaken) {
-                        DrawText(TextFormat("WINNER: NAYEMUL (%d Hits)", Hero2HitsTaken), card3X + 20, cardY + 75, 19, YELLOW);
-                        DrawText(TextFormat("Shoab: %d Hits Taken", Hero1HitsTaken), card3X + 20, cardY + 102, 14, GRAY);
+                        DrawText(TextFormat("WINNER: %s (%d Hits)", inputHero2Name, Hero2HitsTaken), card3X + 20, cardY + 75, 19, YELLOW);
+                        DrawText(TextFormat("%s: %d Hits Taken", inputHero1Name, Hero1HitsTaken), card3X + 20, cardY + 102, 14, GRAY);
                     } else DrawText(TextFormat("TIED: BOTH (%d Hits)", Hero1HitsTaken), card3X + 20, cardY + 85, 19, WHITE);
 
                     char restartText[] = "Press [R] to Play Again   |   [M] Main Menu";
@@ -3556,10 +4133,52 @@ int main(void)
 
                 if (winDialogueIndex < 2)
                 {
-                    char promptText[] = "PRESS [ENTER] OR [SPACE] TO ADVANCE BROADCAST";
+                    char promptText[] = "PRESS [ENTER] OR [SPACE] TO ADVANCE BROADCAST & SAVE LOGS";
                     if (((int)(GetTime() * 3)) % 2 == 0)
                         DrawText(promptText, (WindowWidth - MeasureText(promptText, 18)) / 2, panelY + panelH - 45, 18, GREEN);
-                    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) { PlaySound(menuSelect); winDialogueIndex++; }
+                    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE))
+                    {
+                        PlaySound(menuSelect);
+                        winDialogueIndex++;
+                        if (winDialogueIndex == 2 && !currentMatchSaved)
+                        {
+                            MatchRecord rec = {
+                                .isVictory = true,
+                                .runTime = runPlayTime, // Saved clear time
+                                .hero1Score = Hero1Score,
+                                .hero2Score = Hero2Score,
+                                .hero1Kills = Hero1Kills,
+                                .hero2Kills = Hero2Kills,
+                                .hero1BossDamage = Hero1BossDamage,
+                                .hero2BossDamage = Hero2BossDamage,
+                                .hero1HitsTaken = Hero1HitsTaken,
+                                .hero2HitsTaken = Hero2HitsTaken
+                            };
+                            strncpy(rec.hero1PilotName, inputHero1Name, sizeof(rec.hero1PilotName) - 1);
+                            strncpy(rec.hero2PilotName, inputHero2Name, sizeof(rec.hero2PilotName) - 1);
+                            SaveMatchRecord(rec);
+
+                            // Update Permanent Career Profiles
+                            careerProfiles[0].totalMissions++;
+                            careerProfiles[0].totalVictories++;
+                            careerProfiles[0].totalScore += Hero1Score;
+                            careerProfiles[0].totalAlienKills += Hero1Kills;
+                            careerProfiles[0].totalMinionKills += Hero1MinionKills;
+                            careerProfiles[0].totalBossDamage += Hero1BossDamage;
+                            careerProfiles[0].totalHitsTaken += Hero1HitsTaken;
+
+                            careerProfiles[1].totalMissions++;
+                            careerProfiles[1].totalVictories++;
+                            careerProfiles[1].totalScore += Hero2Score;
+                            careerProfiles[1].totalAlienKills += Hero2Kills;
+                            careerProfiles[1].totalMinionKills += Hero2MinionKills;
+                            careerProfiles[1].totalBossDamage += Hero2BossDamage;
+                            careerProfiles[1].totalHitsTaken += Hero2HitsTaken;
+
+                            SaveHeroProfiles(careerProfiles);
+                            currentMatchSaved = true;
+                        }
+                    }
                 }
 
                 if (IsKeyPressed(KEY_R))
@@ -3600,6 +4219,8 @@ int main(void)
                     StopSound(sndEntityDrone);
                     for (int eo = 0; eo < MAX_ENTITY_ORBS; eo++) entityOrbs[eo].active = false;
 
+                    currentMatchSaved = false;
+
                     for (int a = 0; a < MAX_ASTEROIDS; a++) asteroids[a].active = false;
                     for (int d = 0; d < MAX_ASTEROID_DEBRIS; d++) debrisPool[d].active = false;
                     for (int s = 0; s < MAX_SMOKE_PARTICLES; s++) smokePool[s].active = false;
@@ -3611,7 +4232,7 @@ int main(void)
                     commandersTriggered = false; commanderIntroActive = false; commanderIntroTimer = 0.0f; gameTimeDilation = 1.0f;
                     jammerActive = false; warpActive = false; jammerHp = 0; warpHp = 0; radarJammedTimer = 0.0f;
                     jammerPowerTimer = 0.0f; warpPowerTimer = 0.0f; bossEnraged = false;
-                    for (int b = 0; b < MAX_COMMANDER_BULLETS; b++) { jammerBulletActive[b] = false; warpBulletActive[b] = false; }
+                    for (int b = 0; b < MAX_COMMANDER_BULLETS; b++) { jammerBulletActive[b] = false; warpBulletActive[b] = false; jammerBulletLocked[b] = false; }
                     minionDeployTimer = 0.0f;
                     for (int m = 0; m < MAX_MINIONS; m++) minionActive[m] = false;
                     for (int mb = 0; mb < MAX_MINION_BULLETS; mb++) minionBulletActive[mb] = false;
@@ -4860,7 +5481,8 @@ int main(void)
                 if (jammerBulletActive[b])
                 {
                     DrawRectangle((int)(jammerBulletPos[b].x - 4), (int)jammerBulletPos[b].y, 8, 22, (Color){ 200, 70, 255, 255 });
-                    DrawCircle((int)jammerBulletPos[b].x, (int)jammerBulletPos[b].y + 11, 6.0f, Fade((Color){ 230, 120, 255, 255 }, 0.5f));
+                    float pulseAura = jammerBulletLocked[b] ? 4.0f : (6.0f + sinf((float)GetTime() * 15.0f) * 2.5f);
+                    DrawCircle((int)jammerBulletPos[b].x, (int)jammerBulletPos[b].y + 11, pulseAura, Fade((Color){ 230, 120, 255, 255 }, jammerBulletLocked[b] ? 0.35f : 0.70f));
                 }
                 if (warpBulletActive[b])
                 {
@@ -5229,7 +5851,7 @@ int main(void)
             {
                 DrawTexturePro(HeroTexture, (Rectangle){ 0, 0, (float)HeroTexture.width, (float)HeroTexture.height },
                                (Rectangle){ Hero1Pos.x - HeroWidth / 2.0f, Hero1Pos.y, HeroWidth, HeroHeight }, (Vector2){ 0, 0 }, 0.0f, hero1Debuffed ? PURPLE : WHITE);
-                DrawText("Shoab", (int)Hero1Pos.x - MeasureText("Shoab", 18) / 2, (int)Hero1Pos.y - 24, 18, LIME);
+                DrawText(TextFormat("Shoab [%s]", inputHero1Name), (int)Hero1Pos.x - MeasureText(TextFormat("Shoab [%s]", inputHero1Name), 18) / 2, (int)Hero1Pos.y - 24, 18, LIME);
                 if (hero1Debuffed)
                 {
                     DrawCircleLines((int)Hero1Pos.x, (int)(Hero1Pos.y + HeroHeight / 2.0f), 65.0f, MAGENTA);
@@ -5255,7 +5877,7 @@ int main(void)
                 DrawStealthFlames((Vector2){ Hero2Pos.x, Hero2Pos.y + HeroHeight / 2.0f }, HeroWidth, HeroHeight);
                 DrawTexturePro(StealthHeroTexture, (Rectangle){ 0, 0, (float)StealthHeroTexture.width, (float)StealthHeroTexture.height },
                                (Rectangle){ Hero2Pos.x - HeroWidth / 2.0f, Hero2Pos.y, HeroWidth, HeroHeight }, (Vector2){ 0, 0 }, 0.0f, hero2Debuffed ? PURPLE : WHITE);
-                DrawText("Nayemul", (int)Hero2Pos.x - MeasureText("Nayemul", 18) / 2, (int)Hero2Pos.y - 24, 18, YELLOW);
+                DrawText(TextFormat("Nayemul [%s]", inputHero2Name), (int)Hero2Pos.x - MeasureText(TextFormat("Nayemul [%s]", inputHero2Name), 18) / 2, (int)Hero2Pos.y - 24, 18, YELLOW);
                 if (hero2Debuffed)
                 {
                     DrawCircleLines((int)Hero2Pos.x, (int)(Hero2Pos.y + HeroHeight / 2.0f), 65.0f, MAGENTA);
@@ -5367,7 +5989,7 @@ int main(void)
             DrawText(telemShoabStr, b1X, b1Y + bSize + 5, 10, telemShoabCol);
 
             int text1X = b1X + bSize + 14;
-            DrawText("PILOT 1: SHOAB", text1X, 18, 20, LIME);
+            DrawText(TextFormat("PILOT 1: %s", inputHero1Name), text1X, 18, 20, LIME);
             if (radarJammedTimer > 0.0f)
             {
                 int jamW = 240;
@@ -5464,7 +6086,7 @@ int main(void)
             else if (Hero2Lives <= 0) { telemNayemulStr = "SIGNAL: 00.0% // LOST"; telemNayemulCol = DARKGRAY; }
             DrawText(telemNayemulStr, b2X + bSize - MeasureText(telemNayemulStr, 10), b2Y + bSize + 5, 10, telemNayemulCol);
 
-            const char* pilot2Title = "PILOT 2: NAYEMUL";
+            const char* pilot2Title = TextFormat("PILOT 2: %s", inputHero2Name);
             DrawText(pilot2Title, b2X - 14 - MeasureText(pilot2Title, 20), 18, 20, YELLOW);
             if (radarJammedTimer > 0.0f)
             {
