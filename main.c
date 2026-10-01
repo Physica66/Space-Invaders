@@ -597,7 +597,7 @@ void DrawCyberBox(Rectangle rec, Color borderColor, Color bgColor, const char* t
     DrawLineEx((Vector2){ rec.x - 3, rec.y + rec.height + 3 }, (Vector2){ rec.x - 3, rec.y + rec.height - arm }, 3.0f, titleColor);
 
     DrawLineEx((Vector2){ rec.x + rec.width + 3, rec.y + rec.height + 3 }, (Vector2){ rec.x + rec.width - arm, rec.y + rec.height + 3 }, 3.0f, titleColor);
-    DrawLineEx((Vector2){ rec.x + rec.width + 3, rec.y + rec.height + 3 }, (Vector2){ rec.x + rec.width + 3, rec.y + rec.height - arm }, 3.0f, titleColor);
+    DrawLineEx((Vector2){ rec.x + rec.width + 3, rec.y + rec.height + 3 }, (Vector2){ rec.x + rec.width + 3, rec.y + arm }, 3.0f, titleColor);
 
     if (title != NULL && strlen(title) > 0)
     {
@@ -862,7 +862,18 @@ int main(void)
     Music bgmGameplay[3];
     bgmGameplay[0] = LoadMusicStream(FileExists("assets/audio/aggressive_bgm.wav") ? "assets/audio/aggressive_bgm.wav" : (FileExists("assets/audio/bgm_combat_aggressive.wav") ? "assets/audio/bgm_combat_aggressive.wav" : "assets/audio/bgm_combat_1.wav"));
     bgmGameplay[1] = LoadMusicStream(FileExists("assets/audio/air_strike_bgm.wav") ? "assets/audio/air_strike_bgm.wav" : (FileExists("assets/audio/bgm_combat_casual.wav") ? "assets/audio/bgm_combat_casual.wav" : "assets/audio/bgm_combat_2.wav"));
-    bgmGameplay[2] = LoadMusicStream(FileExists("assets/audio/casual_retro_bgm.mp3") ? "assets/audio/casual_retro_bgm.mp3" : (FileExists("assets/audio/bgm_combat_soft.wav") ? "assets/audio/bgm_combat_soft.wav" : "assets/audio/bgm_combat_3.wav"));
+    
+    // Fixed: Robust multi-format fallback for Track 3 (.wav prioritized over .mp3)
+    const char* softBgmPath = "assets/audio/bgm_combat_soft.wav";
+    if (FileExists("assets/audio/casual_retro_bgm_fixed.wav")) softBgmPath = "assets/audio/casual_retro_bgm_fixed.wav";
+    else if (FileExists("assets/audio/bgm_combat_soft.wav")) softBgmPath = "assets/audio/bgm_combat_soft.wav";
+    else if (FileExists("assets/audio/casual_retro_bgm.wav")) softBgmPath = "assets/audio/casual_retro_bgm.wav";
+    else if (FileExists("assets/audio/bgm_combat_3.wav")) softBgmPath = "assets/audio/bgm_combat_3.wav";
+    else if (FileExists("assets/audio/bgm_combat_soft.mp3")) softBgmPath = "assets/audio/bgm_combat_soft.mp3";
+    else if (FileExists("assets/audio/bgm_combat_soft_2.mp3")) softBgmPath = "assets/audio/bgm_combat_soft_2.mp3";
+    else if (FileExists("assets/audio/casual_retro_bgm.mp3")) softBgmPath = "assets/audio/casual_retro_bgm.mp3";
+    else softBgmPath = "assets/audio/bgm_combat_soft.wav";
+    bgmGameplay[2] = LoadMusicStream(softBgmPath);
 
     bool gameplayBgmActive = false;
 
@@ -897,6 +908,57 @@ int main(void)
 
     Texture2D portraitNayemulCrit = LoadTexture("assets/sprites/nayemul_hero_crit.png");
     if (portraitNayemulCrit.id == 0) portraitNayemulCrit = portraitNayemul;
+
+    // Load & precision-crop developer portraits into clean 300x300 textures
+    Texture2D credPortraitNayemul = { 0 };
+    if (FileExists("assets/sprites/Nayemul.png"))
+    {
+        Image nImg = LoadImage("assets/sprites/Nayemul.png");
+        if (nImg.data != NULL)
+        {
+            // Zoom in directly onto Nayemul (focusing on head, glasses, and torso)
+            int cropSize = (int)(nImg.width * 0.32f);
+            if (cropSize > nImg.height) cropSize = nImg.height;
+            int cropX = (int)(nImg.width * 0.48f) - (cropSize / 2);
+            int cropY = (int)(nImg.height * 0.53f) - (cropSize / 2);
+            if (cropX < 0) cropX = 0;
+            if (cropY < 0) cropY = 0;
+            if (cropX + cropSize > nImg.width) cropX = nImg.width - cropSize;
+            if (cropY + cropSize > nImg.height) cropY = nImg.height - cropSize;
+
+            ImageCrop(&nImg, (Rectangle){ (float)cropX, (float)cropY, (float)cropSize, (float)cropSize });
+            ImageResize(&nImg, 300, 300);
+            credPortraitNayemul = LoadTextureFromImage(nImg);
+            SetTextureFilter(credPortraitNayemul, TEXTURE_FILTER_BILINEAR);
+            UnloadImage(nImg);
+        }
+    }
+    if (credPortraitNayemul.id == 0) credPortraitNayemul = portraitNayemul;
+
+    Texture2D credPortraitShoab = { 0 };
+    if (FileExists("assets/sprites/Shoab.png"))
+    {
+        Image sImg = LoadImage("assets/sprites/Shoab.png");
+        if (sImg.data != NULL)
+        {
+            // Zoomed portrait focused clearly on Shoab's face and upper chest
+            int cropSize = (int)(sImg.width * 0.70f);
+            if (cropSize > sImg.height) cropSize = sImg.height;
+            int cropX = (int)(sImg.width * 0.50f) - (cropSize / 2);
+            int cropY = (int)(sImg.height * 0.38f) - (cropSize / 2);
+            if (cropX < 0) cropX = 0;
+            if (cropY < 0) cropY = 0;
+            if (cropX + cropSize > sImg.width) cropX = sImg.width - cropSize;
+            if (cropY + cropSize > sImg.height) cropY = sImg.height - cropSize;
+
+            ImageCrop(&sImg, (Rectangle){ (float)cropX, (float)cropY, (float)cropSize, (float)cropSize });
+            ImageResize(&sImg, 300, 300);
+            credPortraitShoab = LoadTextureFromImage(sImg);
+            SetTextureFilter(credPortraitShoab, TEXTURE_FILTER_BILINEAR);
+            UnloadImage(sImg);
+        }
+    }
+    if (credPortraitShoab.id == 0) credPortraitShoab = portraitShoab;
 
     Texture2D clusterBombTex   = LoadTexture("assets/sprites/cluster_bomb_idle.png");
     Texture2D clusterBlastTex  = LoadTexture("assets/sprites/cluster_bomb_blast.png");
@@ -1170,10 +1232,10 @@ int main(void)
         SetSoundVolume(sndRankS, SfxVolume);
         SetSoundVolume(sndRankBadge, SfxVolume);
 
-        // Black Hole Audio Levels
-        SetSoundVolume(sndBlackHoleDrone, SfxVolume * 0.75f);
-        SetSoundVolume(sndBlackHolePull, SfxVolume);
-        SetSoundVolume(sndBlackHoleCrush, SfxVolume);
+        // Black Hole Audio Levels (Increased slightly so drone & pull are clear and audible!)
+        SetSoundVolume(sndBlackHoleDrone, SfxVolume * 1.50f);
+        SetSoundVolume(sndBlackHolePull, SfxVolume * 1.40f);
+        SetSoundVolume(sndBlackHoleCrush, SfxVolume * 1.40f);
 
         // Void Entity Audio Levels
         SetSoundVolume(sndEntitySpawn, SfxVolume);
@@ -1603,7 +1665,7 @@ int main(void)
             DrawText(regSub, (WindowWidth - MeasureText(regSub, 18)) / 2, panelY + 85, 18, RAYWHITE);
             DrawLine(panelX + 80, panelY + 115, panelX + panelW - 80, panelY + 115, SKYBLUE);
 
-            // Input handling for names
+            // Input handling for names (M and m are safely typed without triggering menu return)
             int key = GetCharPressed();
             while (key > 0)
             {
@@ -1689,7 +1751,7 @@ int main(void)
                 "TYPE NAME FOR NAYEMUL'S SPACESHIP AND PRESS [ENTER] TO LAUNCH";
             DrawText(promptEntry, (WindowWidth - MeasureText(promptEntry, 20)) / 2, panelY + panelH - 85, 20, GOLD);
 
-            char entryFooter[] = "PRESS [ENTER] TO CONFIRM   |   [BACKSPACE] TO DELETE   |   [M] RETURN TO MENU";
+            char entryFooter[] = "PRESS [ENTER] TO CONFIRM   |   [BACKSPACE] TO DELETE   |   [ESC] RETURN TO MENU";
             DrawText(entryFooter, (WindowWidth - MeasureText(entryFooter, 17)) / 2, panelY + panelH - 40, 17, GREEN);
 
             if (IsKeyPressed(KEY_ENTER))
@@ -1712,7 +1774,8 @@ int main(void)
                 }
             }
 
-            if (IsKeyPressed(KEY_M))
+            // Exiting back to menu is handled strictly by ESC so typing M/m never kicks out
+            if (IsKeyPressed(KEY_ESCAPE))
             {
                 PlaySound(menuSelect);
                 CurrentState = STATE_MENU;
@@ -1983,7 +2046,7 @@ int main(void)
             DrawRectangleLines(card1X, cardY, cardW, cardH, YELLOW);
             DrawRectangleLines(card1X + 4, cardY + 4, cardW - 8, cardH - 8, Fade(DARKBLUE, 0.7f));
 
-            DrawText("PILOT: NAYEMUL ISLAM", card1X + (cardW - MeasureText("PILOT: NAYEMUL ISLAM", 24)) / 2, cardY + 22, 24, YELLOW);
+            DrawText(TextFormat("PILOT: %s", inputHero2Name), card1X + (cardW - MeasureText(TextFormat("PILOT: %s", inputHero2Name), 24)) / 2, cardY + 22, 24, YELLOW);
             DrawText("CALLSIGN: SHADOW-2 [STEALTH]", card1X + (cardW - MeasureText("CALLSIGN: SHADOW-2 [STEALTH]", 16)) / 2, cardY + 52, 16, RAYWHITE);
 
             int pSize = 110, pY = cardY + 80;
@@ -2027,7 +2090,7 @@ int main(void)
             DrawRectangleLines(card2X, cardY, cardW, cardH, LIME);
             DrawRectangleLines(card2X + 4, cardY + 4, cardW - 8, cardH - 8, Fade(DARKBLUE, 0.7f));
 
-            DrawText("PILOT: MD. SHOAB MAHMUD", card2X + (cardW - MeasureText("PILOT: MD. SHOAB MAHMUD", 24)) / 2, cardY + 22, 24, LIME);
+            DrawText(TextFormat("PILOT: %s", inputHero1Name), card2X + (cardW - MeasureText(TextFormat("PILOT: %s", inputHero1Name), 24)) / 2, cardY + 22, 24, LIME);
             DrawText("CALLSIGN: AEGIS-1 [INTERCEPTOR]", card2X + (cardW - MeasureText("CALLSIGN: AEGIS-1 [INTERCEPTOR]", 16)) / 2, cardY + 52, 16, RAYWHITE);
 
             int p2X = card2X + (cardW - pSize) / 2;
@@ -2225,16 +2288,22 @@ int main(void)
 
             if (creditsTab == 0)
             {
-                // NAYEMUL ISLAM'S tab
+                // NAYEMUL ISLAM'S tab with Aspect-Ratio Preserved High-Resolution Framing
                 int pSize = 135, pX = cardX + 45, pY = cardY + 50;
                 DrawText("Nayemul Islam", pX + (pSize - MeasureText("Nayemul Islam", 22)) / 2, cardY + 18, 22, YELLOW);
 
                 DrawRectangle(pX - 3, pY - 3, pSize + 6, pSize + 6, Fade(BLACK, 0.85f));
-                if (portraitNayemul.id > 0)
-                    DrawTexturePro(portraitNayemul, (Rectangle){ 0, 0, (float)portraitNayemul.width, (float)portraitNayemul.height },
-                                   (Rectangle){ (float)pX, (float)pY, (float)pSize, (float)pSize }, (Vector2){0,0}, 0.0f, WHITE);
+                if (credPortraitNayemul.id > 0)
+                {
+                    DrawTexturePro(credPortraitNayemul,
+                                   (Rectangle){ 0, 0, (float)credPortraitNayemul.width, (float)credPortraitNayemul.height },
+                                   (Rectangle){ (float)pX, (float)pY, (float)pSize, (float)pSize },
+                                   (Vector2){ 0, 0 }, 0.0f, WHITE);
+                }
                 else
+                {
                     DrawRectangle(pX, pY, pSize, pSize, Fade(DARKBROWN, 0.5f));
+                }
                 DrawRectangleLinesEx((Rectangle){ (float)pX, (float)pY, (float)pSize, (float)pSize }, 2.5f, YELLOW);
 
                 DrawText("Roll ID: 2505087", pX + (pSize - MeasureText("Roll ID: 2505087", 18)) / 2, pY + pSize + 14, 18, GREEN);
@@ -2278,16 +2347,22 @@ int main(void)
             }
             else
             {
-                // MD. SHOAB MAHMUD'S TAB
+                // MD. SHOAB MAHMUD'S TAB with Aspect-Ratio Preserved High-Resolution Framing
                 int pSize = 135, pX = cardX + 45, pY = cardY + 50;
                 DrawText("Md. Shoab Mahmud", pX + (pSize - MeasureText("Md. Shoab Mahmud", 22)) / 2, cardY + 18, 22, LIME);
 
                 DrawRectangle(pX - 3, pY - 3, pSize + 6, pSize + 6, Fade(BLACK, 0.85f));
-                if (portraitShoab.id > 0)
-                    DrawTexturePro(portraitShoab, (Rectangle){ 0, 0, (float)portraitShoab.width, (float)portraitShoab.height },
-                                   (Rectangle){ (float)pX, (float)pY, (float)pSize, (float)pSize }, (Vector2){0,0}, 0.0f, WHITE);
+                if (credPortraitShoab.id > 0)
+                {
+                    DrawTexturePro(credPortraitShoab,
+                                   (Rectangle){ 0, 0, (float)credPortraitShoab.width, (float)credPortraitShoab.height },
+                                   (Rectangle){ (float)pX, (float)pY, (float)pSize, (float)pSize },
+                                   (Vector2){ 0, 0 }, 0.0f, WHITE);
+                }
                 else
+                {
                     DrawRectangle(pX, pY, pSize, pSize, Fade(DARKGREEN, 0.5f));
+                }
                 DrawRectangleLinesEx((Rectangle){ (float)pX, (float)pY, (float)pSize, (float)pSize }, 2.5f, LIME);
 
                 DrawText("Roll ID: 2505066", pX + (pSize - MeasureText("Roll ID: 2505066", 18)) / 2, pY + pSize + 14, 18, GREEN);
@@ -2486,28 +2561,28 @@ int main(void)
             if (launchDialogueIndex == 0)
             {
                 DrawText("[ MISSION BRIEFING: OPERATION SKYFALL ]", dlgX + 40, dlgY + 28, 24, GOLD);
-                DrawText("Shoab: \"Nayemul, long-range radar confirms the invasion grid!\"", dlgX + 40, dlgY + 75, 22, LIME);
+                DrawText(TextFormat("Shoab [%s]: \"Nayemul, long-range radar confirms the invasion grid!\"", inputHero1Name), dlgX + 40, dlgY + 75, 21, LIME);
                 DrawText("\"The swarm is dropping fast. Millions of lives are on the line!\"", dlgX + 40, dlgY + 115, 20, LIGHTGRAY);
-                DrawText("Nayemul: \"Our ships are ready. We charge straight through their front lines!\"", dlgX + 40, dlgY + 160, 22, YELLOW);
+                DrawText(TextFormat("Nayemul [%s]: \"Our ships are ready. We charge straight through their front lines!\"", inputHero2Name), dlgX + 40, dlgY + 160, 21, YELLOW);
             }
             else if (launchDialogueIndex == 1)
             {
                 DrawText("[ LAUNCH RAIL PRESSURE & DIAGNOSTICS ]", dlgX + 40, dlgY + 28, 24, GOLD);
-                DrawText("Shoab: \"Cooling line two is leaking, but we have no time to fix it. Nayemul, check your flight systems!\"", dlgX + 40, dlgY + 75, 21, LIME);
-                DrawText("Nayemul: \"Diagnostics cleared! Thrusters are hot. Let's make sure Earth is safe when we return!\"", dlgX + 40, dlgY + 130, 21, YELLOW);
+                DrawText(TextFormat("Shoab [%s]: \"Cooling line two is leaking, but we have no time to fix it. Nayemul, check your flight systems!\"", inputHero1Name), dlgX + 40, dlgY + 75, 20, LIME);
+                DrawText(TextFormat("Nayemul [%s]: \"Diagnostics cleared! Thrusters are hot. Let's make sure Earth is safe when we return!\"", inputHero2Name), dlgX + 40, dlgY + 130, 20, YELLOW);
             }
             else if (launchDialogueIndex == 2)
             {
                 DrawText("[ PRE-FLIGHT AUTHORIZATION - DUAL STRIKE FLEET ]", dlgX + 40, dlgY + 28, 24, GOLD);
-                DrawText("Shoab: \"Cannons hot, shields linked! Here is the plan:\"", dlgX + 40, dlgY + 75, 22, LIME);
+                DrawText(TextFormat("Shoab [%s]: \"Cannons hot, shields linked! Here is the plan:\"", inputHero1Name), dlgX + 40, dlgY + 75, 21, LIME);
                 DrawText("\"I will take the left side [A/D to Move, W to Fire]. You take the right!\"", dlgX + 40, dlgY + 115, 20, LIGHTGRAY);
-                DrawText("Nayemul: \"Got it! Stealth wings locked [Arrow Keys to Move, UP to Fire]. Let's go!\"", dlgX + 40, dlgY + 160, 22, YELLOW);
+                DrawText(TextFormat("Nayemul [%s]: \"Got it! Stealth wings locked [Arrow Keys to Move, UP to Fire]. Let's go!\"", inputHero2Name), dlgX + 40, dlgY + 160, 21, YELLOW);
             }
             else if (launchDialogueIndex == 3)
             {
                 DrawText("[ ATMOSPHERIC BREACH - DEFENSE COMMAND ]", dlgX + 40, dlgY + 28, 24, GOLD);
                 DrawText("Command: \"Command to Strike Flight: You have cleared the atmosphere. Sector Alpha is open. Weapons free!\"", dlgX + 40, dlgY + 75, 22, SKYBLUE);
-                DrawText("Nayemul & Shoab: \"Orbit reached! Weapons free! Let's save Earth!\"", dlgX + 40, dlgY + 135, 22, GREEN);
+                DrawText(TextFormat("%s & %s: \"Orbit reached! Weapons free! Let's save Earth!\"", inputHero2Name, inputHero1Name), dlgX + 40, dlgY + 135, 22, GREEN);
             }
 
             if (!launchCountdownActive)
@@ -3739,7 +3814,7 @@ int main(void)
                 CurrentState = STATE_MENU; PlayMusicStream(bgmMenu);
             }
 
-            // revival logic
+            // Revival logic and defibrillator sound handling
             if (Hero1Lives <= 0 && Hero2Lives > 1 && !GameOver && !bossDefeated)
             {
                 if (Vector2Distance(Hero2Pos, Hero1CrashPos) < 85.0f)
@@ -3771,6 +3846,49 @@ int main(void)
                 else { if (hero2ReviveTimer > 0.0f) StopSound(sndDefibHum); hero2ReviveTimer = 0.0f; }
             }
             else { if (hero2ReviveTimer > 0.0f) StopSound(sndDefibHum); hero2ReviveTimer = 0.0f; }
+
+            // DRAW REVIVAL ROUND COLORED VISUALS (Defibrillator Energy Dome & Pulse Beacons)
+            if (Hero1Lives <= 0 && !GameOver && !bossDefeated && Hero1CrashPos.x != 0)
+            {
+                float beaconPulse = fabsf(sinf((float)GetTime() * 6.0f));
+                DrawCircleLines((int)Hero1CrashPos.x, (int)Hero1CrashPos.y + HeroHeight / 2.0f, 40.0f + beaconPulse * 12.0f, Fade(LIME, 0.65f));
+                DrawCircle((int)Hero1CrashPos.x, (int)Hero1CrashPos.y + HeroHeight / 2.0f, 16.0f, Fade(LIME, 0.35f + beaconPulse * 0.35f));
+                DrawText("CRASH BEACON", (int)Hero1CrashPos.x - MeasureText("CRASH BEACON", 13) / 2, (int)Hero1CrashPos.y - 12, 13, LIME);
+
+                if (hero1ReviveTimer > 0.0f)
+                {
+                    float reviveRatio = hero1ReviveTimer / 1.5f;
+                    if (reviveRatio > 1.0f) reviveRatio = 1.0f;
+                    Vector2 defibCenter = { Hero1CrashPos.x, Hero1CrashPos.y + HeroHeight / 2.0f };
+
+                    BeginBlendMode(BLEND_ADDITIVE);
+                    DrawCircleSector(defibCenter, 72.0f, 0.0f, reviveRatio * 360.0f, 36, Fade(LIME, 0.40f));
+                    DrawCircleLines((int)defibCenter.x, (int)defibCenter.y, 72.0f, LIME);
+                    DrawRing(defibCenter, 66.0f, 75.0f, 0.0f, reviveRatio * 360.0f, 36, YELLOW);
+                    EndBlendMode();
+                }
+            }
+
+            if (Hero2Lives <= 0 && !GameOver && !bossDefeated && Hero2CrashPos.x != 0)
+            {
+                float beaconPulse = fabsf(sinf((float)GetTime() * 6.0f));
+                DrawCircleLines((int)Hero2CrashPos.x, (int)Hero2CrashPos.y + HeroHeight / 2.0f, 40.0f + beaconPulse * 12.0f, Fade(YELLOW, 0.65f));
+                DrawCircle((int)Hero2CrashPos.x, (int)Hero2CrashPos.y + HeroHeight / 2.0f, 16.0f, Fade(YELLOW, 0.35f + beaconPulse * 0.35f));
+                DrawText("CRASH BEACON", (int)Hero2CrashPos.x - MeasureText("CRASH BEACON", 13) / 2, (int)Hero2CrashPos.y - 12, 13, YELLOW);
+
+                if (hero2ReviveTimer > 0.0f)
+                {
+                    float reviveRatio = hero2ReviveTimer / 2.0f;
+                    if (reviveRatio > 1.0f) reviveRatio = 1.0f;
+                    Vector2 defibCenter = { Hero2CrashPos.x, Hero2CrashPos.y + HeroHeight / 2.0f };
+
+                    BeginBlendMode(BLEND_ADDITIVE);
+                    DrawCircleSector(defibCenter, 72.0f, 0.0f, reviveRatio * 360.0f, 36, Fade(YELLOW, 0.40f));
+                    DrawCircleLines((int)defibCenter.x, (int)defibCenter.y, 72.0f, YELLOW);
+                    DrawRing(defibCenter, 66.0f, 75.0f, 0.0f, reviveRatio * 360.0f, 36, LIME);
+                    EndBlendMode();
+                }
+            }
 
             // GAME LOST SCREEN (ALL MOVEMENT and AUDIO stopped EXCEPT BGM)-bug fixed...
             if (GameOver)
@@ -5780,39 +5898,6 @@ int main(void)
                 }
             }
 
-            // revival logics and visuals...
-            if (Hero1Lives <= 0 && Hero2Lives > 1 && !GameOver && !bossDefeated)
-            {
-                if (Vector2Distance(Hero2Pos, Hero1CrashPos) < 85.0f)
-                {
-                    if (!IsSoundPlaying(sndDefibHum)) PlaySound(sndDefibHum);
-                    hero1ReviveTimer += Time;
-                    if (hero1ReviveTimer >= 1.5f)
-                    {
-                        StopSound(sndDefibHum); Hero2Lives--; Hero1Lives = 1; hero1ReviveTimer = 0.0f;
-                        Hero1Pos = Hero1CrashPos; PlaySound(cheer);
-                    }
-                }
-                else { if (hero1ReviveTimer > 0.0f) StopSound(sndDefibHum); hero1ReviveTimer = 0.0f; }
-            }
-            else { if (hero1ReviveTimer > 0.0f) StopSound(sndDefibHum); hero1ReviveTimer = 0.0f; }
-
-            if (Hero2Lives <= 0 && Hero1Lives > 1 && !GameOver && !bossDefeated)
-            {
-                if (Vector2Distance(Hero1Pos, Hero2CrashPos) < 85.0f)
-                {
-                    if (!IsSoundPlaying(sndDefibHum)) PlaySound(sndDefibHum);
-                    hero2ReviveTimer += Time;
-                    if (hero2ReviveTimer >= 2.0f)
-                    {
-                        StopSound(sndDefibHum); Hero1Lives--; Hero2Lives = 1; hero2ReviveTimer = 0.0f;
-                        Hero2Pos = Hero2CrashPos; PlaySound(cheer);
-                    }
-                }
-                else { if (hero2ReviveTimer > 0.0f) StopSound(sndDefibHum); hero2ReviveTimer = 0.0f; }
-            }
-            else { if (hero2ReviveTimer > 0.0f) StopSound(sndDefibHum); hero2ReviveTimer = 0.0f; }
-
             // DRAW SMOKE and ELECTRICAL SPARK PARTICLES visuals,by Nayemul!!!
             for (int s = 0; s < MAX_SMOKE_PARTICLES; s++)
             {
@@ -6330,6 +6415,11 @@ int main(void)
     if (portraitNayemul.id > 0) UnloadTexture(portraitNayemul);
     if (portraitShoabCrit.id > 0 && portraitShoabCrit.id != portraitShoab.id) UnloadTexture(portraitShoabCrit);
     if (portraitNayemulCrit.id > 0 && portraitNayemulCrit.id != portraitNayemul.id) UnloadTexture(portraitNayemulCrit);
+
+    // Cleanup Developer Portraits
+    if (credPortraitShoab.id > 0 && credPortraitShoab.id != portraitShoab.id) UnloadTexture(credPortraitShoab);
+    if (credPortraitNayemul.id > 0 && credPortraitNayemul.id != portraitNayemul.id) UnloadTexture(credPortraitNayemul);
+
     if (clusterBombTex.id > 0) UnloadTexture(clusterBombTex);
     if (clusterBlastTex.id > 0) UnloadTexture(clusterBlastTex);
     if (teamShieldDomeTex.id > 0) UnloadTexture(teamShieldDomeTex);
