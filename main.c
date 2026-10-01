@@ -216,6 +216,52 @@ typedef struct {
     bool active;
 } SparkParticle;
 
+// Micro-Singularity Anomaly (Black Hole) with smooth drift and collapse
+typedef struct {
+    Vector2 pos;
+    float basePosX;
+    float pullRadius;      // Accretion halo pull limit (450px)
+    float shearRadius;     // Tidal shear heavy drag zone (180px)
+    float coreRadius;      // Event horizon destruction zone (35px)
+    float maxPullForce;    // Maximum inward velocity (380px/s)
+    float driftTimer;
+    float rotationAngle;
+    float scale;           // Shrinks from 1.0f -> 0.0f when collapsing
+    float alpha;           // Smooth fade out
+    bool active;
+    bool spawned;
+    bool collapsing;
+    float collapseTimer;
+} BlackHole;
+
+// Mysterious Black Entity (Void Phantom) that emerges from the collapsed black hole
+#define MAX_ENTITY_ORBS 6
+
+typedef struct {
+    Vector2 pos;
+    Vector2 vel;
+    bool active;
+} EntityOrb;
+
+typedef struct {
+    Vector2 pos;
+    Vector2 speed;
+    int hp;
+    int maxHp;
+    bool active;
+    bool spawned;
+    float animTimer;
+    int currentFrame;
+    float attackTimer;
+    float phaseTimer;
+    bool phasing;
+    float screamTimer;
+    bool screaming;
+    float alpha;
+    float targetedHeroTimer;
+    int targetedHero;      // 1 = Shoab, 2 = Nayemul
+} VoidEntity;
+
 #ifndef PI
 #define PI 3.14159265358979323846f //finally,fixed this problem,thanks to MMAK sir :)
 #endif
@@ -435,7 +481,7 @@ void DrawCyberBox(Rectangle rec, Color borderColor, Color bgColor, const char* t
     DrawLineEx((Vector2){ rec.x - 3, rec.y + rec.height + 3 }, (Vector2){ rec.x - 3, rec.y + rec.height - arm }, 3.0f, titleColor);
 
     DrawLineEx((Vector2){ rec.x + rec.width + 3, rec.y + rec.height + 3 }, (Vector2){ rec.x + rec.width - arm, rec.y + rec.height + 3 }, 3.0f, titleColor);
-    DrawLineEx((Vector2){ rec.x + rec.width + 3, rec.y + rec.height + 3 }, (Vector2){ rec.x + rec.width + 3, rec.y + rec.height - arm }, 3.0f, titleColor);
+    DrawLineEx((Vector2){ rec.x + rec.width + 3, rec.y + rec.height + 3 }, (Vector2){ rec.x + rec.width + 3, rec.y + arm }, 3.0f, titleColor);
 
     if (title != NULL && strlen(title) > 0)
     {
@@ -603,12 +649,75 @@ int main(void)
     Sound sndAirdropIncoming = LoadSound("assets/audio/sfx_airdrop_incoming.wav");
 
     Sound sndAsteroidHitHero = LoadSound("assets/audio/sfx_asteroid_hit_hero.wav");
-    Sound sndAsteroidRicochet= LoadSound("assets/audio/sfx_asteroid_ricochet.wav");
+    Sound sndAsteroidRicochet= LoadSound("assets/audio/sfx_asteroid_ricochet.wav"); //setting every sfx and bgm
     Sound sndAsteroidShatter = LoadSound("assets/audio/sfx_asteroid_shatter.wav");
     Sound sndCockpitSpark    = LoadSound("assets/audio/sfx_cockpit_spark.wav");
     Sound sndHullAlarm       = LoadSound("assets/audio/sfx_hull_alarm.wav");
     Sound sndRankS           = LoadSound("assets/audio/sfx_rank_s.wav");
     Sound sndRankBadge       = LoadSound("assets/audio/sfx_rank_badge.wav");
+
+    // Load Black Hole Visuals and Sounds safely
+    Texture2D texBlackHoleCore = LoadTexture("assets/sprites/black_hole_core.png");
+    Texture2D texBlackHoleDisk = LoadTexture("assets/sprites/black_hole_disk.png");
+
+    Sound sndBlackHoleDrone = LoadSound("assets/audio/sfx_blackhole_drone.wav");
+    Sound sndBlackHolePull  = LoadSound("assets/audio/sfx_blackhole_pull.wav");
+    Sound sndBlackHoleCrush = LoadSound("assets/audio/sfx_blackhole_crush.wav");
+
+    // Load Mysterious Black Entity (Void Phantom) Visuals and Haunted Sounds
+    Texture2D texEntityPhantom[4];
+    for (int ep = 0; ep < 4; ep++) {
+        texEntityPhantom[ep] = LoadTexture(TextFormat("assets/sprites/entity_phantom%d.png", ep + 1));
+    }
+    Texture2D texEntityOrb = LoadTexture("assets/sprites/entity_void_orb.png");
+
+    Sound sndEntitySpawn  = LoadSound("assets/audio/sfx_entity_spawn.wav");
+    Sound sndEntityDrone  = LoadSound("assets/audio/sfx_entity_drone.wav");
+    Sound sndEntityAttack = LoadSound("assets/audio/sfx_entity_attack.wav");
+    Sound sndEntityScream = LoadSound("assets/audio/sfx_entity_scream.wav");
+
+    BlackHole blackHole = {
+        .pos = (Vector2){ WindowWidth / 2.0f, 60.0f },
+        .basePosX = WindowWidth / 2.0f,
+        .pullRadius = 450.0f,
+        .shearRadius = 180.0f,
+        .coreRadius = 35.0f,
+        .maxPullForce = 380.0f,
+        .driftTimer = 0.0f,
+        .rotationAngle = 0.0f,
+        .scale = 1.0f,
+        .alpha = 1.0f,
+        .active = false,
+        .spawned = false,
+        .collapsing = false,
+        .collapseTimer = 0.0f
+    };
+
+    VoidEntity voidEntity = {
+        .pos = (Vector2){ WindowWidth / 2.0f, 180.0f },
+        .speed = (Vector2){ 110.0f, 0.0f },
+        .hp = 60,
+        .maxHp = 60,
+        .active = false,
+        .spawned = false,
+        .animTimer = 0.0f,
+        .currentFrame = 0,
+        .attackTimer = 2.0f,
+        .phaseTimer = 5.0f,
+        .phasing = false,
+        .screamTimer = 8.0f,
+        .screaming = false,
+        .alpha = 0.0f,
+        .targetedHeroTimer = 0.0f,
+        .targetedHero = 1
+    };
+
+    EntityOrb entityOrbs[MAX_ENTITY_ORBS];
+    for (int eo = 0; eo < MAX_ENTITY_ORBS; eo++) {
+        entityOrbs[eo].active = false;
+        entityOrbs[eo].pos = (Vector2){ 0, 0 };
+        entityOrbs[eo].vel = (Vector2){ 0, 0 };
+    }
 
     bool magRailSoundPlayed = false;
     bool laserChargeSoundPlayed = false;
@@ -927,6 +1036,17 @@ int main(void)
         SetSoundVolume(sndHullAlarm, SfxVolume);
         SetSoundVolume(sndRankS, SfxVolume);
         SetSoundVolume(sndRankBadge, SfxVolume);
+
+        // Black Hole Audio Levels
+        SetSoundVolume(sndBlackHoleDrone, SfxVolume * 0.75f);
+        SetSoundVolume(sndBlackHolePull, SfxVolume);
+        SetSoundVolume(sndBlackHoleCrush, SfxVolume);
+
+        // Void Entity Audio Levels
+        SetSoundVolume(sndEntitySpawn, SfxVolume);
+        SetSoundVolume(sndEntityDrone, SfxVolume * 0.70f);
+        SetSoundVolume(sndEntityAttack, SfxVolume);
+        SetSoundVolume(sndEntityScream, SfxVolume);
 
         SetMusicVolume(bgmStory, BgmVolume);
         SetMusicVolume(bgmMenu, BgmVolume);
@@ -1370,19 +1490,36 @@ int main(void)
             }
             else if (howToPlayTab == 1)
             {
-                DrawText("HOSTILE FORCES & INTERACTIVE SPACE HAZARDS", textX, contentY, 22, YELLOW);
-                DrawText("> DRIFTING METALLIC ASTEROIDS (Spawns every 13 seconds):", textX + 20, contentY + 38, 20, (Color){ 200, 220, 255, 255 });
-                DrawText("  - Metallic asteroids tumble diagonally across orbit acting as neutral dynamic cover!", textX + 40, contentY + 66, 18, RAYWHITE);
-                DrawText("  - Absorbs alien blasters & commander fire. CAUTION: Ramming an asteroid slows your ship by 60% for 3s!", textX + 40, contentY + 94, 18, ORANGE);
-                DrawText("  - Shattering an asteroid awards +100 Points and shaves 1.0 second off your Special Cooldown!", textX + 40, contentY + 122, 18, LIME);
+                DrawText("HOSTILE FORCES & INTERACTIVE SPACE HAZARDS", textX, contentY, 21, YELLOW);
 
-                DrawText("> REGULAR INVASION SWARM:", textX + 20, contentY + 165, 20, RED);
-                DrawText("  - Descends from deep space in synchronized formation with variable thruster speeds.", textX + 40, contentY + 193, 18, RAYWHITE);
-                DrawText("  - Bounces off screen boundaries and steps 20 pixels lower each bounce. Defend the 70% orbital line!", textX + 40, contentY + 221, 18, LIGHTGRAY);
+                // 1. ASTEROIDS
+                DrawText("> DRIFTING METALLIC ASTEROIDS (Spawns every 13 seconds):", textX + 20, contentY + 28, 17, (Color){ 200, 220, 255, 255 });
+                DrawText("  - Metallic asteroids tumble diagonally across orbit acting as neutral dynamic cover!", textX + 40, contentY + 49, 15, RAYWHITE);
+                DrawText("  - Absorbs alien blasters & commander fire. CAUTION: Ramming an asteroid slows your ship by 60% for 3s!", textX + 40, contentY + 69, 15, ORANGE);
+                DrawText("  - Shattering an asteroid awards +100 Points and shaves 1.0 second off your Special Cooldown!", textX + 40, contentY + 89, 15, LIME);
 
-                DrawText("> ELITE ALIEN COMMANDERS (Spawn at 65% wave eradication):", textX + 20, contentY + 265, 20, MAGENTA);
-                DrawText("  1. COMMANDER JAMMER (35 HP): Heavy tracking bolts & EMP space lightning that jams cockpit HUD.", textX + 40, contentY + 293, 18, RAYWHITE);
-                DrawText("  2. COMMANDER WARP (30 HP): Dual rapid blasters and automatic reactive emergency micro-teleportation.", textX + 40, contentY + 321, 18, LIGHTGRAY);
+                // 2. REGULAR SWARM 
+                DrawText("> REGULAR INVASION SWARM:", textX + 20, contentY + 115, 17, RED);
+                DrawText("  - Descends from deep space in synchronized formation with variable thruster speeds.", textX + 40, contentY + 136, 15, RAYWHITE);
+                DrawText("  - Bounces off screen boundaries and steps 20 pixels lower each bounce. Defend the 70% orbital line!", textX + 40, contentY + 156, 15, LIGHTGRAY);
+
+                // 3. ELITE COMMANDERS 
+                DrawText("> ELITE ALIEN COMMANDERS (Spawn at 65% wave eradication):", textX + 20, contentY + 182, 17, MAGENTA);
+                DrawText("  1. COMMANDER JAMMER (35 HP): Heavy tracking bolts & EMP space lightning that jams cockpit HUD.", textX + 40, contentY + 203, 15, RAYWHITE);
+                DrawText("  2. COMMANDER WARP (30 HP): Dual rapid blasters and automatic reactive emergency micro-teleportation.", textX + 40, contentY + 223, 15, LIGHTGRAY);
+
+                // MICRO-SINGULARITY ANOMALY (BLACK HOLE)
+                DrawText("> MICRO-SINGULARITY ANOMALY (BLACK HOLE - Spawns upon Pod Collapse):", textX + 20, contentY + 249, 17, (Color){ 210, 130, 255, 255 });
+                DrawText("  - Sinks slowly at 25px/s with a 380px lateral sine drift; pulls ships, bullets, and asteroids.", textX + 40, contentY + 270, 15, RAYWHITE);
+                DrawText("  - Accretion Halo (450px drag) | Tidal Shear (180px, -70% speed) | Core (35px lethal event horizon, -1 Life).", textX + 40, contentY + 290, 15, ORANGE);
+                DrawText("  - Absorbs boss bullets & orbs. Collapses smoothly at bottom of screen. Team Shield [ENTER] negates pull.", textX + 40, contentY + 310, 15, SKYBLUE);
+
+                // THE VOID PHANTOM spooky ;)
+                DrawText("> THE VOID PHANTOM (60 HP Cosmic Anomaly):", textX + 20, contentY + 336, 17, (Color){ 230, 90, 255, 255 });
+                DrawText("  - Materializes at the exact collapse point with a haunted infrasonic presence.", textX + 40, contentY + 357, 15, RAYWHITE);
+                DrawText("  - Dimensional Phasing: Dissolves and reforms directly above the targeted hero every 6-9 seconds.", textX + 40, contentY + 377, 15, YELLOW);
+                DrawText("  - Void Orbs deal 1 DMG & 2.5s weapons jam. Gravitational Scream causes white lightning & jams HUD for 3.5s.", textX + 40, contentY + 397, 15, RED);
+                DrawText("  - Eliminate using blasters (2 DMG), Clusters (15 DMG), or Hyper Beam (20 burst DMG) for +800 Points!", textX + 40, contentY + 417, 15, LIME);
             }
             else if (howToPlayTab == 2)
             {
@@ -1609,7 +1746,7 @@ int main(void)
                 DrawText("CORE CONTRIBUTIONS & ARCHITECTURE:", listX, itemY, 18, GOLD);
                 itemY += 24;
 
-                const char* nayemulContribs[19] = {
+                const char* nayemulContribs[20] = {
                     "1. MacBook native Spaces borderless fullscreen engine & Cocoa window bridge",
                     "2. Unified [M] key navigation across all game states, menus, and debriefing screens",
                     "3. Interactive drifting metallic asteroids, dynamic space cover & physics deflection",
@@ -1628,10 +1765,11 @@ int main(void)
                     "16. Alien Commanders: Jammer HUD jamming and Warp micro-teleportation systems",
                     "17. Hero 8-Way Guided Cluster Salvo with expanding destructive kinetic blast radii",
                     "18. Directed and balanced 98% of in-game audio sound effects and multi-track combat BGM",
-                    "19. 3-layer parallax star engine, CRT scanlines, and End-of-Run Rank Plaque Grading"
+                    "19. 3-layer parallax star engine, CRT scanlines, and End-of-Run Rank Plaque Grading",
+                    "20. Micro-Singularity Black Hole drift mechanics, smooth collapse & haunted Void Phantom AI"
                 };
 
-                for (int c = 0; c < 19; c++)
+                for (int c = 0; c < 20; c++)
                 {
                     DrawText(nayemulContribs[c], listX, itemY, 14, (c % 2 == 0) ? RAYWHITE : LIGHTGRAY);
                     itemY += 24;
@@ -1951,6 +2089,15 @@ int main(void)
                 StopSound(sndAsteroidShatter);
                 StopSound(sndCockpitSpark);
                 StopSound(sndHullAlarm);
+
+                // Stop Black Hole and Void Entity sounds
+                StopSound(sndBlackHoleDrone);
+                StopSound(sndBlackHolePull);
+                StopSound(sndBlackHoleCrush);
+                StopSound(sndEntityDrone);
+                StopSound(sndEntitySpawn);
+                StopSound(sndEntityAttack);
+                StopSound(sndEntityScream);
             }
 
             // BGM Management,one for regular one and another for boss fighting
@@ -1976,7 +2123,11 @@ int main(void)
             if (!GameOver && !bossDefeated && !deathSequenceActive && IsKeyPressed(KEY_P))
             {
                 isPaused = !isPaused;
-                if (isPaused) PlaySound(pauseIn);
+                if (isPaused) {
+                    PlaySound(pauseIn);
+                    StopSound(sndBlackHoleDrone);
+                    StopSound(sndEntityDrone);
+                }
                 else PlaySound(pauseOut);
             }
 
@@ -2037,6 +2188,227 @@ int main(void)
 
             float domeCenterX = teamShieldCenterX, domeBaseY = WindowHeight, domeRadius = TeamShieldRadius;
 
+            // Trigger Black Hole when Boss Bilateral Deflector Pods are broken
+            if (bossActive && !blackHole.spawned && bossLeftPodHp <= 0 && bossRightPodHp <= 0)
+            {
+                blackHole.spawned = true;
+                blackHole.active = true;
+                blackHole.collapsing = false;
+                blackHole.scale = 1.0f;
+                blackHole.alpha = 1.0f;
+                blackHole.basePosX = WindowWidth / 2.0f;
+                blackHole.pos = (Vector2){ WindowWidth / 2.0f, 60.0f };
+                blackHole.driftTimer = 0.0f;
+                PlaySound(sndBlackHolePull);
+            }
+
+            // Black Hole Slow Downward Movement, Lateral Oscillation, and Smooth Despawn
+            if (blackHole.active && !isPaused && !isFrozen && !deathSequenceActive && !GameOver && !bossDefeated)
+            {
+                blackHole.driftTimer += Time;
+                blackHole.rotationAngle += 115.0f * Time;
+
+                if (!IsSoundPlaying(sndBlackHoleDrone) && !blackHole.collapsing) {
+                    PlaySound(sndBlackHoleDrone);
+                }
+
+                // Slow downward drift & gentle lateral sine wave swaying
+                if (!blackHole.collapsing)
+                {
+                    blackHole.pos.y += 25.0f * Time;
+                    blackHole.pos.x = blackHole.basePosX + sinf(blackHole.driftTimer * 0.55f) * 190.0f;
+
+                    // When crossing near the bottom window, initiate smooth collapse
+                    if (blackHole.pos.y >= WindowHeight - 130.0f)
+                    {
+                        blackHole.collapsing = true;
+                        blackHole.collapseTimer = 1.5f;
+                    }
+                }
+                else
+                {
+                    // Smooth vanishing transition: shrink scale and fade alpha
+                    blackHole.collapseTimer -= Time;
+                    blackHole.scale = blackHole.collapseTimer / 1.5f;
+                    blackHole.alpha = blackHole.scale;
+
+                    if (blackHole.collapseTimer <= 0.0f)
+                    {
+                        blackHole.active = false;
+                        blackHole.collapsing = false;
+                        StopSound(sndBlackHoleDrone);
+
+                        // Spawn the Mysterious Black Entity (Void Phantom) at the collapse coordinates
+                        voidEntity.active = true;
+                        voidEntity.spawned = true;
+                        voidEntity.pos = blackHole.pos;
+                        voidEntity.hp = voidEntity.maxHp;
+                        voidEntity.alpha = 1.0f;
+                        voidEntity.phasing = false;
+                        voidEntity.attackTimer = 2.0f;
+                        voidEntity.phaseTimer = 5.0f;
+                        voidEntity.screamTimer = 9.0f;
+                        PlaySound(sndEntitySpawn);
+                        PlaySound(sndEntityDrone);
+                    }
+                }
+
+                // Gravitational pull on Heroes (Team Shield dome negates gravity)
+                if (!teamShieldActive && blackHole.scale > 0.1f)
+                {
+                    for (int h = 0; h < 2; h++)
+                    {
+                        Vector2* hPos = (h == 0) ? &Hero1Pos : &Hero2Pos;
+                        int* lives = (h == 0) ? &Hero1Lives : &Hero2Lives;
+
+                        if (*lives > 0)
+                        {
+                            Vector2 diff = Vector2Subtract(blackHole.pos, *hPos);
+                            float dist = Vector2Length(diff);
+
+                            if (dist < (blackHole.pullRadius * blackHole.scale) && dist > (blackHole.coreRadius * blackHole.scale))
+                            {
+                                Vector2 dir = Vector2Normalize(diff);
+                                float pullFactor = (1.0f - (dist / (blackHole.pullRadius * blackHole.scale)));
+                                float currentForce = pullFactor * pullFactor * blackHole.maxPullForce * blackHole.scale;
+                                *hPos = Vector2Add(*hPos, Vector2Scale(dir, currentForce * Time));
+                            }
+                            else if (dist <= (blackHole.coreRadius * blackHole.scale))
+                            {
+                                (*lives)--;
+                                *hPos = (h == 0) ? (Vector2){ WindowWidth * 0.35f, WindowHeight - HeroHeight } : (Vector2){ WindowWidth * 0.65f, WindowHeight - HeroHeight };
+                                if (h == 0) hero1HitFlashTimer = 0.45f; else hero2HitFlashTimer = 0.45f;
+                                hitStopTimer = 0.08f;
+                                PlaySound(sndBlackHoleCrush);
+                                PlaySound(sndHudGlitch);
+
+                                if (*lives <= 0)
+                                {
+                                    if (h == 0) { Hero1CrashPos = *hPos; PlaySound(heroDeath); if (Hero2Lives > 0) { hero2OverdriveTimer = 2.5f; PlaySound(sndShieldActivate); } }
+                                    else { Hero2CrashPos = *hPos; PlaySound(heroDeath); if (Hero1Lives > 0) { hero1OverdriveTimer = 2.5f; PlaySound(sndShieldActivate); } }
+                                    if (Hero1Lives <= 0 && Hero2Lives <= 0) { deathSequenceActive = true; deathDelayTimer = 0.0f; StopSound(sndBlackHoleDrone); }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Black Hole consumes Boss bullets, minion bullets, and disruption orbs (Boss core remains immune)
+                for (int k = 0; k < MAX_BOSS_BULLETS; k++)
+                    if (bossBulletActive[k] && Vector2Distance(bossBulletPos[k], blackHole.pos) < (blackHole.coreRadius + 22.0f) * blackHole.scale) bossBulletActive[k] = false;
+                for (int mb = 0; mb < MAX_MINION_BULLETS; mb++)
+                    if (minionBulletActive[mb] && Vector2Distance(minionBulletPos[mb], blackHole.pos) < (blackHole.coreRadius + 22.0f) * blackHole.scale) minionBulletActive[mb] = false;
+                for (int k = 0; k < MAX_BOSS_ORBS; k++)
+                    if (bossOrbActive[k] && Vector2Distance(bossOrbPos[k], blackHole.pos) < (blackHole.coreRadius + 28.0f) * blackHole.scale) bossOrbActive[k] = false;
+            }
+
+            // Mysterious Black Entity (Void Phantom) AI, Attacks & Phasing
+            if (voidEntity.active && !isPaused && !isFrozen && !deathSequenceActive && !GameOver && !bossDefeated)
+            {
+                if (!IsSoundPlaying(sndEntityDrone)) PlaySound(sndEntityDrone);
+
+                // Animate shifting ethereal mantle
+                voidEntity.animTimer += Time;
+                if (voidEntity.animTimer >= 0.16f)
+                {
+                    voidEntity.animTimer = 0.0f;
+                    voidEntity.currentFrame = (voidEntity.currentFrame + 1) % 4;
+                }
+
+                // Phase Teleportation Mechanics (Dissolve & Reform above heroes)
+                voidEntity.phaseTimer -= Time;
+                if (voidEntity.phaseTimer <= 0.0f)
+                {
+                    voidEntity.phaseTimer = (float)GetRandomValue(6, 9);
+                    voidEntity.targetedHero = (GetRandomValue(0, 1) == 0 && Hero1Lives > 0) ? 1 : (Hero2Lives > 0 ? 2 : 1);
+                    float targetX = (voidEntity.targetedHero == 1 && Hero1Lives > 0) ? Hero1Pos.x : Hero2Pos.x;
+                    voidEntity.pos = (Vector2){ targetX + (float)GetRandomValue(-40, 40), (float)GetRandomValue(90, 240) };
+                    PlaySound(sndEntityAttack);
+                    spaceLightningTimer = 0.05f;
+                }
+
+                // Gentle floating drift
+                voidEntity.pos.x += voidEntity.speed.x * Time;
+                if (voidEntity.pos.x <= 90) { voidEntity.pos.x = 90; voidEntity.speed.x = fabsf(voidEntity.speed.x); }
+                else if (voidEntity.pos.x >= WindowWidth - 90) { voidEntity.pos.x = WindowWidth - 90; voidEntity.speed.x = -fabsf(voidEntity.speed.x); }
+
+                // Void Distortion Orb Attacks
+                voidEntity.attackTimer -= Time;
+                if (voidEntity.attackTimer <= 0.0f)
+                {
+                    voidEntity.attackTimer = 2.6f;
+                    Vector2 targetPos = (Hero1Lives > 0) ? Hero1Pos : Hero2Pos;
+                    Vector2 shootDir = Vector2Normalize(Vector2Subtract(targetPos, voidEntity.pos));
+
+                    for (int eo = 0; eo < MAX_ENTITY_ORBS; eo++)
+                    {
+                        if (!entityOrbs[eo].active)
+                        {
+                            entityOrbs[eo].active = true;
+                            entityOrbs[eo].pos = voidEntity.pos;
+                            entityOrbs[eo].vel = Vector2Scale(shootDir, 320.0f);
+                            PlaySound(sndEntityAttack);
+                            break;
+                        }
+                    }
+                }
+
+                // Eldritch Gravitational Scream Attack
+                voidEntity.screamTimer -= Time;
+                if (voidEntity.screamTimer <= 0.0f)
+                {
+                    voidEntity.screamTimer = 10.5f;
+                    PlaySound(sndEntityScream);
+                    radarJammedTimer = 3.5f;
+                    explosionShakeTimer = 0.35f;
+                    spaceLightningTimer = 0.12f;
+                }
+            }
+
+            // Update Void Distortion Orbs
+            for (int eo = 0; eo < MAX_ENTITY_ORBS; eo++)
+            {
+                if (entityOrbs[eo].active && !isFrozen && !deathSequenceActive && !GameOver && !bossDefeated)
+                {
+                    entityOrbs[eo].pos = Vector2Add(entityOrbs[eo].pos, Vector2Scale(entityOrbs[eo].vel, Time));
+
+                    if (entityOrbs[eo].pos.y > WindowHeight + 30 || entityOrbs[eo].pos.x < -40 || entityOrbs[eo].pos.x > WindowWidth + 40)
+                    {
+                        entityOrbs[eo].active = false;
+                    }
+                    else if (!teamShieldActive && !evacActive)
+                    {
+                        Rectangle h1Rec = { Hero1Pos.x - HeroWidth / 2.0f, Hero1Pos.y, HeroWidth, HeroHeight };
+                        Rectangle h2Rec = { Hero2Pos.x - HeroWidth / 2.0f, Hero2Pos.y, HeroWidth, HeroHeight };
+
+                        if (Hero1Lives > 0 && CheckCollisionCircleRec(entityOrbs[eo].pos, 16.0f, h1Rec))
+                        {
+                            entityOrbs[eo].active = false;
+                            Hero1Lives--; Hero1HitsTaken++; hero1HitFlashTimer = 0.40f;
+                            hero1Debuffed = true; hero1DebuffTimer = 2.5f;
+                            PlaySound(heroOuch); PlaySound(sndHudGlitch);
+                            if (Hero1Lives <= 0) {
+                                Hero1CrashPos = Hero1Pos; PlaySound(heroDeath);
+                                if (Hero2Lives > 0) { hero2OverdriveTimer = 2.5f; PlaySound(sndShieldActivate); }
+                                if (Hero2Lives <= 0) { deathSequenceActive = true; deathDelayTimer = 0.0f; StopSound(sndEntityDrone); }
+                            }
+                        }
+                        else if (Hero2Lives > 0 && CheckCollisionCircleRec(entityOrbs[eo].pos, 16.0f, h2Rec))
+                        {
+                            entityOrbs[eo].active = false;
+                            Hero2Lives--; Hero2HitsTaken++; hero2HitFlashTimer = 0.40f;
+                            hero2Debuffed = true; hero2DebuffTimer = 2.5f;
+                            PlaySound(heroOuch); PlaySound(sndHudGlitch);
+                            if (Hero2Lives <= 0) {
+                                Hero2CrashPos = Hero2Pos; PlaySound(heroDeath);
+                                if (Hero1Lives > 0) { hero1OverdriveTimer = 2.5f; PlaySound(sndShieldActivate); }
+                                if (Hero1Lives <= 0) { deathSequenceActive = true; deathDelayTimer = 0.0f; StopSound(sndEntityDrone); }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Asteroid coming down...
             if (!bossSpawned && !bossActive && !evacActive && !isPaused && !GameOver && !bossDefeated && !deathSequenceActive && !isFrozen)
             {
@@ -2080,6 +2452,43 @@ int main(void)
                     if (!asteroids[a].active) continue;
                     asteroids[a].pos = Vector2Add(asteroids[a].pos, Vector2Scale(asteroids[a].speed, Time));
                     asteroids[a].rotation += asteroids[a].rotSpeed * Time;
+
+                    // Black hole pull and destruction of asteroids
+                    if (blackHole.active && blackHole.scale > 0.1f)
+                    {
+                        Vector2 diff = Vector2Subtract(blackHole.pos, asteroids[a].pos);
+                        float dist = Vector2Length(diff);
+                        if (dist < (blackHole.pullRadius * blackHole.scale) && dist > (blackHole.coreRadius * blackHole.scale))
+                        {
+                            Vector2 dir = Vector2Normalize(diff);
+                            float pullFactor = (1.0f - (dist / (blackHole.pullRadius * blackHole.scale)));
+                            asteroids[a].pos = Vector2Add(asteroids[a].pos, Vector2Scale(dir, pullFactor * 260.0f * Time));
+                        }
+                        else if (dist <= (blackHole.coreRadius * blackHole.scale))
+                        {
+                            asteroids[a].active = false;
+                            PlaySound(sndBlackHoleCrush);
+                            hitStopTimer = 0.05f;
+                            for (int d = 0; d < 6; d++)
+                            {
+                                for (int dp = 0; dp < MAX_ASTEROID_DEBRIS; dp++)
+                                {
+                                    if (!debrisPool[dp].active)
+                                    {
+                                        debrisPool[dp].active = true;
+                                        debrisPool[dp].pos = asteroids[a].pos;
+                                        debrisPool[dp].vel = (Vector2){ (float)GetRandomValue(-180, 180), (float)GetRandomValue(-180, 180) };
+                                        debrisPool[dp].rotation = (float)GetRandomValue(0, 360);
+                                        debrisPool[dp].rotSpeed = (float)GetRandomValue(-140, 140);
+                                        debrisPool[dp].life = 0.8f;
+                                        debrisPool[dp].maxLife = 0.8f;
+                                        break;
+                                    }
+                                }
+                            }
+                            continue;
+                        }
+                    }
 
                     if (asteroids[a].pos.y > WindowHeight + 80 || asteroids[a].pos.x < -100 || asteroids[a].pos.x > WindowWidth + 100)
                     {
@@ -2445,6 +2854,37 @@ int main(void)
                     }
                 }
 
+                // Render Black Hole in Pause overlay if active
+                if (blackHole.active)
+                {
+                    BeginBlendMode(BLEND_ADDITIVE);
+                    if (texBlackHoleDisk.id > 0)
+                    {
+                        DrawTexturePro(texBlackHoleDisk, (Rectangle){ 0, 0, (float)texBlackHoleDisk.width, (float)texBlackHoleDisk.height },
+                                       (Rectangle){ blackHole.pos.x, blackHole.pos.y, 440.0f * blackHole.scale, 440.0f * blackHole.scale },
+                                       (Vector2){ 220.0f * blackHole.scale, 220.0f * blackHole.scale }, blackHole.rotationAngle, Fade(WHITE, 0.85f * blackHole.alpha));
+                        DrawTexturePro(texBlackHoleDisk, (Rectangle){ 0, 0, (float)texBlackHoleDisk.width, (float)texBlackHoleDisk.height },
+                                       (Rectangle){ blackHole.pos.x, blackHole.pos.y, 360.0f * blackHole.scale, 360.0f * blackHole.scale },
+                                       (Vector2){ 180.0f * blackHole.scale, 180.0f * blackHole.scale }, -blackHole.rotationAngle * 1.4f, Fade(PURPLE, 0.70f * blackHole.alpha));
+                    }
+                    EndBlendMode();
+                    if (texBlackHoleCore.id > 0)
+                    {
+                        DrawTexturePro(texBlackHoleCore, (Rectangle){ 0, 0, (float)texBlackHoleCore.width, (float)texBlackHoleCore.height },
+                                       (Rectangle){ blackHole.pos.x, blackHole.pos.y, 140.0f * blackHole.scale, 140.0f * blackHole.scale },
+                                       (Vector2){ 70.0f * blackHole.scale, 70.0f * blackHole.scale }, 0.0f, Fade(WHITE, blackHole.alpha));
+                    }
+                }
+
+                // Render Void Phantom in Pause overlay if active
+                if (voidEntity.active)
+                {
+                    DrawTexturePro(texEntityPhantom[voidEntity.currentFrame],
+                                   (Rectangle){ 0, 0, (float)texEntityPhantom[voidEntity.currentFrame].width, (float)texEntityPhantom[voidEntity.currentFrame].height },
+                                   (Rectangle){ voidEntity.pos.x, voidEntity.pos.y, 120.0f, 120.0f },
+                                   (Vector2){ 60.0f, 60.0f }, 0.0f, Fade(WHITE, voidEntity.alpha));
+                }
+
                 for (int i = 0; i < 2; i++)
                 {
                     if (Hero1BulletActive[i]) DrawRectangle((int)(Hero1BulletPos[i].x - BulletWidth / 2.0f), (int)Hero1BulletPos[i].y, BulletWidth, BulletHeight, YELLOW);
@@ -2504,6 +2944,8 @@ int main(void)
                     PlaySound(menuSelect); isPaused = false;
                     StopMusicStream(bgmBoss);
                     if (gameplayBgmActive) { StopMusicStream(bgmGameplay[BgmTrackIndex]); gameplayBgmActive = false; }
+                    StopSound(sndBlackHoleDrone); StopSound(sndBlackHolePull); StopSound(sndBlackHoleCrush);
+                    StopSound(sndEntityDrone); StopSound(sndEntitySpawn); StopSound(sndEntityAttack); StopSound(sndEntityScream);
                     CurrentState = STATE_MENU; PlayMusicStream(bgmMenu);
                 }
                 EndMode2D();
@@ -2744,6 +3186,8 @@ int main(void)
                     StopSound(sndWarningSiren);
                     StopSound(AlienShoot);
                     StopSound(sndAlienStep);
+                    StopSound(sndBlackHoleDrone);
+                    StopSound(sndEntityDrone);
 
                     CurrentState = STATE_VIDEO_PLAY;
                     StartVideo(1, 10.5f);
@@ -2757,6 +3201,8 @@ int main(void)
                 if (gameplayBgmActive) { StopMusicStream(bgmGameplay[BgmTrackIndex]); gameplayBgmActive = false; }
                 StopSound(bossLaserSound); StopSound(sndDefibHum); StopSound(sndWarningSiren);
                 StopSound(AlienShoot); StopSound(sndAlienStep);
+                StopSound(sndBlackHoleDrone); StopSound(sndBlackHolePull); StopSound(sndBlackHoleCrush);
+                StopSound(sndEntityDrone); StopSound(sndEntitySpawn); StopSound(sndEntityAttack); StopSound(sndEntityScream);
                 CurrentState = STATE_MENU; PlayMusicStream(bgmMenu);
             }
 
@@ -2801,6 +3247,8 @@ int main(void)
                 if (gameplayBgmActive) { StopMusicStream(bgmGameplay[BgmTrackIndex]); gameplayBgmActive = false; }
                 StopSound(bossLaserSound); StopSound(sndDefibHum); StopSound(sndWarningSiren);
                 StopSound(AlienShoot); StopSound(sndAlienStep);
+                StopSound(sndBlackHoleDrone);
+                StopSound(sndEntityDrone);
                 if (!lostBgmStarted) { PlayMusicStream(bgmLost); lostBgmStarted = true; }
                 UpdateMusicStream(bgmLost);
 
@@ -2899,6 +3347,20 @@ int main(void)
                     superPauseTimer = 0.0f; hitStopTimer = 0.0f; canopyGlintTimer = 0.0f; spaceLightningTimer = 0.0f;
                     hero1OverdriveTimer = 0.0f; hero2OverdriveTimer = 0.0f;
                     asteroidSpawnTimer = 0.0f; runPlayTime = 0.0f; rankAudioPlayed = false;
+
+                    // Reset Black Hole & Void Entity
+                    blackHole.active = false;
+                    blackHole.spawned = false;
+                    blackHole.collapsing = false;
+                    blackHole.scale = 1.0f;
+                    blackHole.alpha = 1.0f;
+                    StopSound(sndBlackHoleDrone);
+
+                    voidEntity.active = false;
+                    voidEntity.spawned = false;
+                    StopSound(sndEntityDrone);
+                    for (int eo = 0; eo < MAX_ENTITY_ORBS; eo++) entityOrbs[eo].active = false;
+
                     for (int a = 0; a < MAX_ASTEROIDS; a++) asteroids[a].active = false;
                     for (int d = 0; d < MAX_ASTEROID_DEBRIS; d++) debrisPool[d].active = false;
                     for (int s = 0; s < MAX_SMOKE_PARTICLES; s++) smokePool[s].active = false;
@@ -2937,6 +3399,7 @@ int main(void)
                 {
                     PlaySound(menuSelect); StopMusicStream(bgmLost); lostBgmStarted = false; lostDialogueIndex = 0;
                     if (gameplayBgmActive) { StopMusicStream(bgmGameplay[BgmTrackIndex]); gameplayBgmActive = false; }
+                    StopSound(sndBlackHoleDrone); StopSound(sndEntityDrone);
                     CurrentState = STATE_MENU; PlayMusicStream(bgmMenu);
                 }
                 EndMode2D();
@@ -2965,6 +3428,7 @@ int main(void)
                 if (gameplayBgmActive) { StopMusicStream(bgmGameplay[BgmTrackIndex]); gameplayBgmActive = false; }
                 StopSound(bossLaserSound); StopSound(sndDefibHum); StopSound(sndWarningSiren);
                 StopSound(AlienShoot); StopSound(sndAlienStep);
+                StopSound(sndBlackHoleDrone); StopSound(sndEntityDrone);
                 if (!winSoundPlayed) { winSoundPlayed = true; }
                 if (!winBgmStarted) { PlayMusicStream(bgmWin); winBgmStarted = true; }
                 UpdateMusicStream(bgmWin);
@@ -3122,6 +3586,20 @@ int main(void)
                     superPauseTimer = 0.0f; hitStopTimer = 0.0f; canopyGlintTimer = 0.0f; spaceLightningTimer = 0.0f;
                     hero1OverdriveTimer = 0.0f; hero2OverdriveTimer = 0.0f;
                     asteroidSpawnTimer = 0.0f; runPlayTime = 0.0f; rankAudioPlayed = false;
+
+                    // Reset Black Hole & Void Entity
+                    blackHole.active = false;
+                    blackHole.spawned = false;
+                    blackHole.collapsing = false;
+                    blackHole.scale = 1.0f;
+                    blackHole.alpha = 1.0f;
+                    StopSound(sndBlackHoleDrone);
+
+                    voidEntity.active = false;
+                    voidEntity.spawned = false;
+                    StopSound(sndEntityDrone);
+                    for (int eo = 0; eo < MAX_ENTITY_ORBS; eo++) entityOrbs[eo].active = false;
+
                     for (int a = 0; a < MAX_ASTEROIDS; a++) asteroids[a].active = false;
                     for (int d = 0; d < MAX_ASTEROID_DEBRIS; d++) debrisPool[d].active = false;
                     for (int s = 0; s < MAX_SMOKE_PARTICLES; s++) smokePool[s].active = false;
@@ -3160,6 +3638,7 @@ int main(void)
                 {
                     PlaySound(menuSelect); StopMusicStream(bgmWin); winBgmStarted = false; winDialogueIndex = 0;
                     if (gameplayBgmActive) { StopMusicStream(bgmGameplay[BgmTrackIndex]); gameplayBgmActive = false; }
+                    StopSound(sndBlackHoleDrone); StopSound(sndEntityDrone);
                     CurrentState = STATE_MENU; PlayMusicStream(bgmMenu);
                 }
                 EndMode2D();
@@ -3423,6 +3902,23 @@ int main(void)
                             if (warpHp <= 0) { warpActive = false; *hScore += 500; PlaySound(sndWarpDeath); }
                         }
 
+                        // Damage Mysterious Void Entity with regular blasters
+                        if (voidEntity.active && bActive[i])
+                        {
+                            Rectangle veRec = { voidEntity.pos.x - 50.0f, voidEntity.pos.y - 50.0f, 100.0f, 100.0f };
+                            if (CheckCollisionRecs(bRec, veRec))
+                            {
+                                PlaySound(damage); bActive[i] = false; voidEntity.hp -= 2; *hScore += 60;
+                                if (voidEntity.hp <= 0)
+                                {
+                                    voidEntity.active = false; *hScore += 800;
+                                    StopSound(sndEntityDrone);
+                                    PlaySound(sndEntityScream);
+                                    hitStopTimer = 0.08f;
+                                }
+                            }
+                        }
+
                         if (bossActive && bActive[i])
                         {
                             for (int m = 0; m < MAX_MINIONS; m++)
@@ -3509,6 +4005,19 @@ int main(void)
                     PlaySound(damage); warpHp -= 2; Hero1Score += 50; hitStopTimer = 0.04f;
                     if (warpHp <= 0) { warpActive = false; Hero1Score += 500; PlaySound(sndWarpDeath); }
                 }
+
+                // Shoab Hyper Beam damages Void Entity
+                if (voidEntity.active && CheckCollisionRecs(SpecialBulletRec, (Rectangle){ voidEntity.pos.x - 50.0f, voidEntity.pos.y - 50.0f, 100.0f, 100.0f }))
+                {
+                    PlaySound(damage); voidEntity.hp -= 20; Hero1Score += 250; hitStopTimer = 0.05f;
+                    if (voidEntity.hp <= 0)
+                    {
+                        voidEntity.active = false; Hero1Score += 800;
+                        StopSound(sndEntityDrone);
+                        PlaySound(sndEntityScream);
+                    }
+                }
+
                 if (bossActive)
                 {
                     for (int m = 0; m < MAX_MINIONS; m++)
@@ -3621,6 +4130,12 @@ int main(void)
                 if (jammerActive && !hitDetonated && CheckCollisionRecs(mRec, (Rectangle){ jammerPos.x, jammerPos.y, COMMANDER_SIZE, COMMANDER_SIZE })) hitDetonated = true;
                 if (warpActive && !hitDetonated && CheckCollisionRecs(mRec, (Rectangle){ warpPos.x, warpPos.y, COMMANDER_SIZE, COMMANDER_SIZE })) hitDetonated = true;
 
+                // Cluster collision against Void Entity
+                if (voidEntity.active && !hitDetonated && CheckCollisionRecs(mRec, (Rectangle){ voidEntity.pos.x - 50.0f, voidEntity.pos.y - 50.0f, 100.0f, 100.0f }))
+                {
+                    hitDetonated = true;
+                }
+
                 if (bossActive && !hitDetonated)
                 {
                     for (int minIdx = 0; minIdx < MAX_MINIONS; minIdx++)
@@ -3666,6 +4181,18 @@ int main(void)
                     }
 
                     Vector2 blastCenter = clusterMissilePos[m];
+
+                    // Blast AoE on Void Entity
+                    if (voidEntity.active && CheckCollisionCircleRec(blastCenter, 65.0f, (Rectangle){ voidEntity.pos.x - 50.0f, voidEntity.pos.y - 50.0f, 100.0f, 100.0f }))
+                    {
+                        voidEntity.hp -= 15; Hero2Score += 150;
+                        if (voidEntity.hp <= 0)
+                        {
+                            voidEntity.active = false; Hero2Score += 800;
+                            StopSound(sndEntityDrone);
+                            PlaySound(sndEntityScream);
+                        }
+                    }
 
                     if (!bossActive && !bossSpawned)
                     {
@@ -3717,7 +4244,7 @@ int main(void)
                                 {
                                     bossLeftPodHp -= 40; Hero2Score += 250; Hero2BossDamage += 40;
                                     clusterBossDamageDealt = true; PlaySound(damage); bossHitFlashTimer = 0.06f;
-                                    if (bossLeftPodHp <= 0) { bossLeftPodHp = 0; PlaySound(sndPodDestroy); }
+                                    if (bossLeftPodHp <= 0) { bossLeftPodHp = 0; PlaySound(sndPodDestroy); } //pods damage logic...
                                 }
                                 else if (hitRightPod && !hitLeftPod)
                                 {
@@ -3733,7 +4260,7 @@ int main(void)
                                     if (distLeft <= distRight)
                                     {
                                         bossLeftPodHp -= 40;
-                                        if (bossLeftPodHp <= 0) { bossLeftPodHp = 0; PlaySound(sndPodDestroy); } //pods damage logic...
+                                        if (bossLeftPodHp <= 0) { bossLeftPodHp = 0; PlaySound(sndPodDestroy); }
                                     }
                                     else
                                     {
@@ -4106,6 +4633,8 @@ int main(void)
                         deathSequenceActive = true; deathDelayTimer = 0.0f;
                         StopSound(bossLaserSound); screenCamera.offset = (Vector2){ 0, 0 };
                         StopSound(AlienShoot); StopSound(sndAlienStep);
+                        StopSound(sndBlackHoleDrone);
+                        StopSound(sndEntityDrone);
                     }
                 }
             }
@@ -4217,6 +4746,72 @@ int main(void)
                     else
                     {
                         DrawCircle((int)debrisPool[dp].pos.x, (int)debrisPool[dp].pos.y, 3.0f, Fade(GRAY, alpha));
+                    }
+                }
+            }
+
+            // RENDER BLACK HOLE IF ACTIVE (With smooth scale and fade-out alpha)
+            if (blackHole.active)
+            {
+                BeginBlendMode(BLEND_ADDITIVE);
+                if (texBlackHoleDisk.id > 0)
+                {
+                    DrawTexturePro(texBlackHoleDisk, (Rectangle){ 0, 0, (float)texBlackHoleDisk.width, (float)texBlackHoleDisk.height },
+                                   (Rectangle){ blackHole.pos.x, blackHole.pos.y, 440.0f * blackHole.scale, 440.0f * blackHole.scale },
+                                   (Vector2){ 220.0f * blackHole.scale, 220.0f * blackHole.scale }, blackHole.rotationAngle, Fade(WHITE, 0.85f * blackHole.alpha));
+                    DrawTexturePro(texBlackHoleDisk, (Rectangle){ 0, 0, (float)texBlackHoleDisk.width, (float)texBlackHoleDisk.height },
+                                   (Rectangle){ blackHole.pos.x, blackHole.pos.y, 360.0f * blackHole.scale, 360.0f * blackHole.scale },
+                                   (Vector2){ 180.0f * blackHole.scale, 180.0f * blackHole.scale }, -blackHole.rotationAngle * 1.4f, Fade(PURPLE, 0.70f * blackHole.alpha));
+                }
+                EndBlendMode();
+
+                if (texBlackHoleCore.id > 0)
+                {
+                    DrawTexturePro(texBlackHoleCore, (Rectangle){ 0, 0, (float)texBlackHoleCore.width, (float)texBlackHoleCore.height },
+                                   (Rectangle){ blackHole.pos.x, blackHole.pos.y, 140.0f * blackHole.scale, 140.0f * blackHole.scale },
+                                   (Vector2){ 70.0f * blackHole.scale, 70.0f * blackHole.scale }, 0.0f, Fade(WHITE, blackHole.alpha));
+                }
+            }
+
+            // RENDER MYSTERIOUS VOID ENTITY (PHANTOM) & ORBS IF ACTIVE
+            if (voidEntity.active)
+            {
+                if (texEntityPhantom[voidEntity.currentFrame].id > 0)
+                {
+                    DrawTexturePro(texEntityPhantom[voidEntity.currentFrame],
+                                   (Rectangle){ 0, 0, (float)texEntityPhantom[voidEntity.currentFrame].width, (float)texEntityPhantom[voidEntity.currentFrame].height },
+                                   (Rectangle){ voidEntity.pos.x, voidEntity.pos.y, 120.0f, 120.0f },
+                                   (Vector2){ 60.0f, 60.0f }, 0.0f, Fade(WHITE, voidEntity.alpha));
+                }
+                else
+                {
+                    DrawCircle((int)voidEntity.pos.x, (int)voidEntity.pos.y, 38.0f, Fade(PURPLE, 0.75f));
+                    DrawCircleLines((int)voidEntity.pos.x, (int)voidEntity.pos.y, 44.0f, Fade(WHITE, 0.85f));
+                }
+
+                // Entity Health Bar
+                int eBarW = 80, eBarH = 6;
+                DrawRectangle((int)voidEntity.pos.x - eBarW / 2, (int)voidEntity.pos.y - 70, eBarW, eBarH, DARKGRAY);
+                DrawRectangle((int)voidEntity.pos.x - eBarW / 2, (int)voidEntity.pos.y - 70, (int)(eBarW * ((float)voidEntity.hp / voidEntity.maxHp)), eBarH, (Color){ 200, 60, 255, 255 });
+                DrawRectangleLines((int)voidEntity.pos.x - eBarW / 2, (int)voidEntity.pos.y - 70, eBarW, eBarH, WHITE);
+            }
+
+            // Render Void Distortion Orbs
+            for (int eo = 0; eo < MAX_ENTITY_ORBS; eo++)
+            {
+                if (entityOrbs[eo].active)
+                {
+                    if (texEntityOrb.id > 0)
+                    {
+                        DrawTexturePro(texEntityOrb,
+                                       (Rectangle){ 0, 0, (float)texEntityOrb.width, (float)texEntityOrb.height },
+                                       (Rectangle){ entityOrbs[eo].pos.x, entityOrbs[eo].pos.y, 32.0f, 32.0f },
+                                       (Vector2){ 16.0f, 16.0f }, (float)GetTime() * 180.0f, WHITE);
+                    }
+                    else
+                    {
+                        DrawCircle((int)entityOrbs[eo].pos.x, (int)entityOrbs[eo].pos.y, 12.0f, (Color){ 180, 40, 255, 255 });
+                        DrawCircleLines((int)entityOrbs[eo].pos.x, (int)entityOrbs[eo].pos.y, 14.0f, WHITE);
                     }
                 }
             }
@@ -4564,38 +5159,37 @@ int main(void)
             }
 
             // revival logics and visuals...
-            if (Hero1Lives <= 0 && Hero2Lives > 0)
+            if (Hero1Lives <= 0 && Hero2Lives > 1 && !GameOver && !bossDefeated)
             {
-                DrawCircleLines((int)Hero1CrashPos.x, (int)(Hero1CrashPos.y + 40), 38.0f, Fade(LIME, 0.7f));
-                DrawCircle((int)Hero1CrashPos.x, (int)(Hero1CrashPos.y + 40), 6.0f, RED);
-                DrawText("SHOAB DOWN", (int)Hero1CrashPos.x - 45, (int)Hero1CrashPos.y - 10, 14, RED);
-                if (Hero2Lives > 1)
+                if (Vector2Distance(Hero2Pos, Hero1CrashPos) < 85.0f)
                 {
-                    DrawText("FLY HERE TO REVIVE", (int)Hero1CrashPos.x - 65, (int)Hero1CrashPos.y + 85, 13, YELLOW);
-                    if (hero1ReviveTimer > 0.0f)
+                    if (!IsSoundPlaying(sndDefibHum)) PlaySound(sndDefibHum);
+                    hero1ReviveTimer += Time;
+                    if (hero1ReviveTimer >= 1.5f)
                     {
-                        DrawLineEx(Hero2Pos, Hero1CrashPos, 3.0f, Fade(LIME, 0.75f));
-                        DrawRectangle((int)Hero1CrashPos.x - 35, (int)Hero1CrashPos.y - 25, (int)(70 * (hero1ReviveTimer / 2.0f)), 8, LIME);
-                        DrawRectangleLines((int)Hero1CrashPos.x - 35, (int)Hero1CrashPos.y - 25, 70, 8, WHITE);
+                        StopSound(sndDefibHum); Hero2Lives--; Hero1Lives = 1; hero1ReviveTimer = 0.0f;
+                        Hero1Pos = Hero1CrashPos; PlaySound(cheer);
                     }
                 }
+                else { if (hero1ReviveTimer > 0.0f) StopSound(sndDefibHum); hero1ReviveTimer = 0.0f; }
             }
-            if (Hero2Lives <= 0 && Hero1Lives > 0)
+            else { if (hero1ReviveTimer > 0.0f) StopSound(sndDefibHum); hero1ReviveTimer = 0.0f; }
+
+            if (Hero2Lives <= 0 && Hero1Lives > 1 && !GameOver && !bossDefeated)
             {
-                DrawCircleLines((int)Hero2CrashPos.x, (int)(Hero2CrashPos.y + 40), 38.0f, Fade(YELLOW, 0.7f));
-                DrawCircle((int)Hero2CrashPos.x, (int)(Hero2CrashPos.y + 40), 6.0f, RED);
-                DrawText("NAYEMUL DOWN", (int)Hero2CrashPos.x - 52, (int)Hero2CrashPos.y - 10, 14, RED);
-                if (Hero1Lives > 1)
+                if (Vector2Distance(Hero1Pos, Hero2CrashPos) < 85.0f)
                 {
-                    DrawText("FLY HERE TO REVIVE", (int)Hero2CrashPos.x - 65, (int)Hero2CrashPos.y + 85, 13, YELLOW);
-                    if (hero2ReviveTimer > 0.0f)
+                    if (!IsSoundPlaying(sndDefibHum)) PlaySound(sndDefibHum);
+                    hero2ReviveTimer += Time;
+                    if (hero2ReviveTimer >= 2.0f)
                     {
-                        DrawLineEx(Hero1Pos, Hero2CrashPos, 3.0f, Fade(YELLOW, 0.75f));
-                        DrawRectangle((int)Hero2CrashPos.x - 35, (int)Hero2CrashPos.y - 25, (int)(70 * (hero2ReviveTimer / 2.0f)), 8, YELLOW);
-                        DrawRectangleLines((int)Hero2CrashPos.x - 35, (int)Hero2CrashPos.y - 25, 70, 8, WHITE);
+                        StopSound(sndDefibHum); Hero1Lives--; Hero2Lives = 1; hero2ReviveTimer = 0.0f;
+                        Hero2Pos = Hero2CrashPos; PlaySound(cheer);
                     }
                 }
+                else { if (hero2ReviveTimer > 0.0f) StopSound(sndDefibHum); hero2ReviveTimer = 0.0f; }
             }
+            else { if (hero2ReviveTimer > 0.0f) StopSound(sndDefibHum); hero2ReviveTimer = 0.0f; }
 
             // DRAW SMOKE and ELECTRICAL SPARK PARTICLES visuals,by Nayemul!!!
             for (int s = 0; s < MAX_SMOKE_PARTICLES; s++)
@@ -5126,6 +5720,23 @@ int main(void)
     if (texRankBadgeA.id > 0) UnloadTexture(texRankBadgeA);
     if (texRankBadgeB.id > 0) UnloadTexture(texRankBadgeB);
     if (texRankBadgeC.id > 0) UnloadTexture(texRankBadgeC);
+
+    // Black Hole cleanup
+    if (texBlackHoleCore.id > 0) UnloadTexture(texBlackHoleCore);
+    if (texBlackHoleDisk.id > 0) UnloadTexture(texBlackHoleDisk);
+    UnloadSound(sndBlackHoleDrone);
+    UnloadSound(sndBlackHolePull);
+    UnloadSound(sndBlackHoleCrush);
+
+    // Void Entity cleanup
+    for (int ep = 0; ep < 4; ep++) {
+        if (texEntityPhantom[ep].id > 0) UnloadTexture(texEntityPhantom[ep]);
+    }
+    if (texEntityOrb.id > 0) UnloadTexture(texEntityOrb);
+    UnloadSound(sndEntitySpawn);
+    UnloadSound(sndEntityDrone);
+    UnloadSound(sndEntityAttack);
+    UnloadSound(sndEntityScream);
 
     for (int s = 0; s < 7; s++)
     {
